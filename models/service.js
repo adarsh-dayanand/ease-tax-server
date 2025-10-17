@@ -27,19 +27,7 @@ module.exports = (sequelize, DataTypes) => {
       ),
       allowNull: false,
     },
-    basePrice: {
-      type: DataTypes.DECIMAL(10, 2),
-      allowNull: true,
-    },
-    currency: {
-      type: DataTypes.STRING(3),
-      allowNull: false,
-      defaultValue: "INR",
-    },
-    duration: {
-      type: DataTypes.INTEGER, // Duration in minutes
-      allowNull: true,
-    },
+
     isActive: {
       type: DataTypes.BOOLEAN,
       defaultValue: true,

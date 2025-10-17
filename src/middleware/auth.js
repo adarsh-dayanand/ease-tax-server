@@ -45,7 +45,7 @@ const authenticateToken = async (req, res, next) => {
         if (user) {
           userType = "ca";
           // Additional security: verify CA is actually verified/active
-          if (!user.verified || (user.status && user.status !== "active")) {
+          if (user.status && user.status !== "active") {
             return res.status(401).json({
               success: false,
               error: {

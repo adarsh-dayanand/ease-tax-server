@@ -6,6 +6,7 @@ const {
   Review,
   ServiceRequest,
   User,
+  sequelize,
 } = require("../../models");
 const cacheService = require("./cacheService");
 const logger = require("../config/logger");
@@ -27,7 +28,7 @@ class CAService {
         const offset = (page - 1) * limit;
 
         // Build where clause based on filters for CA model
-        const whereClause = { verified: true }; // Only verified CAs
+        const whereClause = { status: "active" }; // Only active CAs
 
         if (filters.location) {
           whereClause.location = { [Op.iLike]: `%${filters.location}%` };
@@ -39,67 +40,132 @@ class CAService {
           };
         }
 
+        // Add rating filter if provided
+        if (filters.minRating) {
+          whereClause["$reviews.rating$"] = {
+            [Op.gte]: parseFloat(filters.minRating),
+          };
+        }
+
         const { rows, count } = await CA.findAndCountAll({
           where: whereClause,
           limit,
           offset,
           order: [
-            filters.sortBy === "experience"
-              ? ["completedFilings", "DESC"]
-              : ["completedFilings", "DESC"], // Default sort by experience/completed filings
+            filters.sortBy === "rating"
+              ? [sequelize.fn("AVG", sequelize.col("reviews.rating")), "DESC"]
+              : filters.sortBy === "experience"
+                ? ["experienceYears", "DESC"]
+                : filters.sortBy === "price"
+                  ? [
+                      sequelize.fn(
+                        "MIN",
+                        sequelize.col("caServices.customPrice")
+                      ),
+                      "ASC",
+                    ]
+                  : ["experienceYears", "DESC"], // Default sort by experience
           ],
           include: [
             {
               model: CASpecialization,
               as: "specializations",
               attributes: ["specialization", "experience"],
+              required: false,
+            },
+            {
+              model: Review,
+              as: "reviews",
+              attributes: ["rating"],
+              required: false,
+            },
+            {
+              model: CAServiceModel,
+              as: "caServices",
+              attributes: ["customPrice", "currency"],
+              where: { isActive: true },
+              required: false,
             },
           ],
           attributes: [
             "id",
             "name",
-            "image",
+            "profileImage",
             "location",
-            "completedFilings",
-            "verified",
             "phone",
             "email",
-            "rating",
-            "reviewCount",
-            "basePrice",
-            "currency",
             "experienceYears",
+            "bio",
+            "qualifications",
+            "languages",
           ],
+          group: ["CA.id", "specializations.id", "reviews.id", "caServices.id"],
+          subQuery: false,
         });
 
-        const transformedCAs = rows.map((ca) => ({
-          id: ca.id,
-          name: ca.name,
-          specialization:
-            ca.specializations?.map((s) => s.specialization).join(", ") ||
-            "Tax Consultant",
-          experience: ca.experienceYears
-            ? `${ca.experienceYears} years`
-            : `${Math.floor(ca.completedFilings / 12) || 1} years`,
-          rating: ca.rating || 0.0,
-          reviewCount: ca.reviewCount || 0,
-          location: ca.location || "India",
-          price: `₹${ca.basePrice ? ca.basePrice.toLocaleString("en-IN") : "2,500"}`,
-          currency: ca.currency || "INR",
-          profileImage: ca.profileImage,
-          verified: ca.verified || false,
-          completedFilings: ca.completedFilings || 0,
-          phone: ca.phone,
-          email: ca.email,
-        }));
+        // Transform the results and calculate aggregated data
+        const transformedCAs = await Promise.all(
+          rows.map(async (ca) => {
+            const reviews = ca.reviews || [];
+            const caServices = ca.caServices || [];
+
+            // Calculate average rating
+            const averageRating =
+              reviews.length > 0
+                ? reviews.reduce((sum, review) => sum + review.rating, 0) /
+                  reviews.length
+                : 0;
+
+            // Get completed consultations count
+            const completedConsultations = await ServiceRequest.count({
+              where: { caId: ca.id, status: "completed" },
+            });
+
+            // Get the lowest custom price or calculate from services
+            let basePrice = null; // default
+            let currency = "INR";
+
+            if (caServices.length > 0) {
+              const prices = caServices
+                .map((service) => service.customPrice)
+                .filter((price) => price != null);
+              if (prices.length > 0) {
+                basePrice = Math.min(...prices);
+              }
+              currency = caServices[0].currency || "INR";
+            }
+
+            return {
+              id: ca.id,
+              name: ca.name,
+              specialization:
+                ca.specializations?.map((s) => s.specialization).join(", ") ||
+                "Tax Consultant",
+              experience: `${ca.experienceYears || 0} years`,
+              rating: Number(averageRating.toFixed(1)) || 0,
+              reviewCount: reviews.length,
+              location: ca.location || "India",
+              price: `₹${basePrice.toLocaleString("en-IN")}`,
+              currency: currency,
+              profileImage: ca.profileImage,
+              completedFilings: completedConsultations,
+              phone: ca.phone,
+              email: ca.email,
+              bio: ca.bio,
+              qualifications: ca.qualifications || [],
+              languages: ca.languages || [],
+              verified: true, // Only active CAs are shown
+            };
+          })
+        );
 
         result = {
           data: transformedCAs,
           pagination: {
             page,
             limit,
-            total: count,
-            totalPages: Math.ceil(count / limit),
+            total: count.length, // count is an array when using group
+            totalPages: Math.ceil(count.length / limit),
           },
           filters: filters,
         };
@@ -326,19 +392,34 @@ class CAService {
       let popularCAs = await cacheService.get(cacheKey);
 
       if (!popularCAs) {
-        const cas = await User.findAll({
-          where: { role: "ca", isActive: true },
-          order: [
-            ["averageRating", "DESC"],
-            ["totalReviews", "DESC"],
-            ["completedConsultations", "DESC"],
-          ],
-          limit,
+        // Fetch CAs with their related data
+        const cas = await CA.findAll({
+          where: { status: "active" },
           include: [
             {
               model: CASpecialization,
               as: "specializations",
               attributes: ["specialization", "experience"],
+            },
+            {
+              model: Review,
+              as: "reviews",
+              attributes: ["rating"],
+              required: false,
+            },
+            {
+              model: ServiceRequest,
+              as: "serviceRequests",
+              attributes: ["status"],
+              where: { status: "completed" },
+              required: false,
+            },
+            {
+              model: CAServiceModel,
+              as: "caServices",
+              attributes: ["customPrice", "currency"],
+              where: { isActive: true },
+              required: false,
             },
           ],
           attributes: [
@@ -347,30 +428,64 @@ class CAService {
             "profileImage",
             "location",
             "experienceYears",
-            "averageRating",
-            "totalReviews",
-            "basePrice",
-            "currency",
-            "isVerified",
-            "completedConsultations",
           ],
+          limit: limit * 2, // Get more than needed to ensure we have enough after filtering
         });
 
-        popularCAs = cas.map((ca) => ({
-          id: ca.id,
-          name: ca.name,
-          specialization:
-            ca.specializations?.map((s) => s.specialization).join(", ") ||
-            "Tax Consultant",
-          experience: `${ca.experienceYears || 0} years`,
-          rating: ca.averageRating || 0,
-          reviewCount: ca.totalReviews || 0,
-          location: ca.location || "India",
-          price: `₹${ca.basePrice || 2500}`,
-          image: ca.profileImage,
-          verified: ca.isVerified || false,
-          completedFilings: ca.completedConsultations || 0,
-        }));
+        // Process each CA to calculate aggregated stats
+        popularCAs = cas.map((ca) => {
+          const reviews = ca.reviews || [];
+          const completedConsultations = ca.serviceRequests
+            ? ca.serviceRequests.length
+            : 0;
+          const caServices = ca.caServices || [];
+
+          // Calculate average rating
+          const averageRating =
+            reviews.length > 0
+              ? reviews.reduce((sum, review) => sum + review.rating, 0) /
+                reviews.length
+              : 0;
+
+          // Get the lowest custom price
+          const customPrice =
+            caServices.length > 0 ??
+            Math.min(...caServices?.map((service) => service?.customPrice));
+
+          const currency =
+            caServices.length > 0 && caServices[0].currency
+              ? caServices[0].currency
+              : "INR";
+
+          return {
+            id: ca.id,
+            name: ca.name,
+            specialization:
+              ca.specializations?.map((s) => s.specialization).join(", ") ||
+              "Tax Consultant",
+            experience: `${ca.experienceYears || 0} years`,
+            rating: Number(averageRating.toFixed(1)) || 0,
+            reviewCount: reviews.length,
+            location: ca?.location || "India",
+            price: customPrice
+              ? `₹${customPrice?.toLocaleString("en-IN")}`
+              : "not defined",
+            currency: currency,
+            profileImage: ca?.profileImage,
+            completedFilings: completedConsultations,
+          };
+        });
+
+        // Sort by rating, reviewCount, completedFilings (consultations)
+        popularCAs.sort((a, b) => {
+          if (b.rating !== a.rating) return b.rating - a.rating;
+          if (b.reviewCount !== a.reviewCount)
+            return b.reviewCount - a.reviewCount;
+          return b.completedFilings - a.completedFilings;
+        });
+
+        // Take only the requested limit
+        popularCAs = popularCAs.slice(0, limit);
 
         // Cache for 1 hour
         await cacheService.set(cacheKey, popularCAs, 3600);
@@ -386,17 +501,6 @@ class CAService {
   /**
    * Helper methods
    */
-  getServices(ca) {
-    return [
-      { name: "ITR Filing", price: `₹${ca.basePrice || 2500}` },
-      { name: "Tax Planning", price: `₹${(ca.basePrice || 2500) * 1.5}` },
-      { name: "GST Registration", price: `₹${(ca.basePrice || 2500) * 0.8}` },
-      {
-        name: "Business Consultation",
-        price: `₹${(ca.basePrice || 2500) * 2}`,
-      },
-    ];
-  }
 
   formatDate(date) {
     const now = new Date();

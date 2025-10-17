@@ -1030,7 +1030,7 @@ paths:
 
     post:
       summary: Create or Update CA Service
-      description: Create a new service or update existing service pricing
+      description: Create a new service (from master list) or set/update your custom price and details for an existing service.
       tags:
         - CA Service Management
       security:
@@ -1041,6 +1041,22 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/CAServiceInput'
+            examples:
+              SetCustomPrice:
+                summary: Set custom price for an existing service
+                value:
+                  serviceId: "550e8400-e29b-41d4-a716-446655440001"
+                  customPrice: 3200.00
+                  experienceLevel: "expert"
+                  notes: "Specialized in complex returns"
+              CreateNewService:
+                summary: Add a new service from master list
+                value:
+                  serviceId: "550e8400-e29b-41d4-a716-446655440005"
+                  customPrice: 15000.00
+                  customDuration: 2880
+                  experienceLevel: "intermediate"
+                  notes: "Company registration and setup"
       responses:
         '200':
           description: Service created/updated successfully
@@ -1057,7 +1073,7 @@ paths:
   /ca-mgmt/services/{serviceId}:
     put:
       summary: Update Specific CA Service
-      description: Update a specific service by ID
+      description: Update your custom price, duration, or notes for a specific service by ID
       tags:
         - CA Service Management
       security:
@@ -3060,17 +3076,6 @@ components:
           type: string
           enum: ['tax_filing', 'tax_planning', 'gst', 'audit', 'consultation', 'compliance', 'business_setup']
           example: "tax_filing"
-        basePrice:
-          type: number
-          format: decimal
-          example: 2500.00
-        currency:
-          type: string
-          example: "INR"
-        duration:
-          type: integer
-          description: Duration in minutes
-          example: 180
         isActive:
           type: boolean
           example: true
@@ -3135,33 +3140,27 @@ components:
         serviceName:
           type: string
           nullable: true
-        description:
-          type: string
-          nullable: true
-        basePrice:
-          type: number
-          format: decimal
-          nullable: true
-        estimatedDays:
-          type: integer
-          nullable: true
-        requirements:
-          type: array
-          items:
-            type: string
-        features:
-          type: array
-          items:
-            type: string
-        additionalCharges:
-          type: object
-        currency:
-          type: string
-          default: "INR"
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
+        get:
+          summary: Get CA's Available Master Services
+          description: Get all master services available for CA to select/configure. Does not include pricing or CA-specific fields.
+          tags:
+            - CA Service Management
+          security:
+            - BearerAuth: []
+          responses:
+            '200':
+              description: Master services retrieved successfully
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    properties:
+                      success:
+                        type: boolean
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Service'
           type: string
           format: date-time
 
@@ -3207,7 +3206,9 @@ components:
       type: object
       required:
         - serviceId
+        # For new services, serviceId should match an existing master service
       properties:
+        # To create a new service, provide serviceId from master list and your custom details
         serviceId:
           type: string
           format: uuid
@@ -3217,6 +3218,7 @@ components:
           format: decimal
           nullable: true
           example: 3000.00
+          description: "Custom price set by CA for this service. Overrides master price."
         customDuration:
           type: integer
           nullable: true

@@ -28,17 +28,9 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.STRING,
       allowNull: true,
     },
-    image: {
+    profileImage: {
       type: DataTypes.STRING,
       allowNull: true,
-    },
-    verified: {
-      type: DataTypes.BOOLEAN,
-      defaultValue: false,
-    },
-    completedFilings: {
-      type: DataTypes.INTEGER,
-      defaultValue: 0,
     },
     phoneVerified: {
       type: DataTypes.BOOLEAN,
@@ -69,30 +61,6 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: {},
       allowNull: true,
     },
-    rating: {
-      type: DataTypes.DECIMAL(3, 2),
-      allowNull: true,
-      defaultValue: 0.0,
-      validate: {
-        min: 0,
-        max: 5,
-      },
-    },
-    reviewCount: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-      defaultValue: 0,
-    },
-    basePrice: {
-      type: DataTypes.DECIMAL(10, 2),
-      allowNull: true,
-      defaultValue: 2500.0,
-    },
-    currency: {
-      type: DataTypes.STRING(3),
-      allowNull: false,
-      defaultValue: "INR",
-    },
     bio: {
       type: DataTypes.TEXT,
       allowNull: true,
@@ -107,25 +75,6 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true,
       defaultValue: ["English", "Hindi"],
     },
-    successRate: {
-      type: DataTypes.DECIMAL(5, 2),
-      allowNull: true,
-      defaultValue: 95.0,
-      validate: {
-        min: 0,
-        max: 100,
-      },
-    },
-    clientRetention: {
-      type: DataTypes.DECIMAL(5, 2),
-      allowNull: true,
-      defaultValue: 85.0,
-      validate: {
-        min: 0,
-        max: 100,
-      },
-    },
-
     experienceYears: {
       type: DataTypes.INTEGER,
       allowNull: true,
@@ -142,6 +91,10 @@ module.exports = (sequelize, DataTypes) => {
     CA.hasMany(models.CAService, {
       foreignKey: "caId",
       as: "caServices",
+    });
+    CA.hasMany(models.ServiceRequest, {
+      foreignKey: "caId",
+      as: "serviceRequests",
     });
     CA.belongsToMany(models.Service, {
       through: models.CAService,

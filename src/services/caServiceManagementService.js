@@ -1,12 +1,83 @@
-const { CAService, CA, ServiceTemplate } = require("../../models");
+const { CAService, CA, ServiceTemplate, Service } = require("../../models");
 const logger = require("../config/logger");
 const { Op } = require("sequelize");
 
 class CAServiceManagementService {
   /**
-   * Get CA's services
+   * Get available master services for CA management (services CA can choose to associate with)
    */
   async getCAServices(caId, includeInactive = false) {
+    try {
+      // Get all available master services
+      const masterServices = await Service.findAll({
+        where: { isActive: true },
+        attributes: [
+          "id",
+          "name",
+          "description",
+          "category",
+          "requirements",
+          "deliverables",
+        ],
+        order: [
+          ["category", "ASC"],
+          ["name", "ASC"],
+        ],
+      });
+
+      // Get CA's existing service associations
+      const caServiceAssociations = await CAService.findAll({
+        where: { caId },
+        attributes: [
+          "serviceId",
+          "customPrice",
+          "currency",
+          "customDuration",
+          "experienceLevel",
+          "notes",
+          "isActive",
+        ],
+      });
+
+      // Create a map of CA's service configurations
+      const caServiceMap = new Map();
+      caServiceAssociations.forEach((caService) => {
+        caServiceMap.set(caService.serviceId, {
+          customPrice: caService.customPrice,
+          currency: caService.currency,
+          customDuration: caService.customDuration,
+          experienceLevel: caService.experienceLevel,
+          notes: caService.notes,
+          isActive: caService.isActive,
+        });
+      });
+
+      // Combine master services with CA's association status
+      return masterServices.map((service) => {
+        const caConfig = caServiceMap.get(service.id);
+
+        return {
+          id: service.id,
+          name: service.name,
+          description: service.description,
+          category: service.category,
+          requirements: service.requirements || [],
+          deliverables: service.deliverables || [],
+          // Only indicate if CA has associated with this service
+          isAssociated: !!caConfig,
+          isConfigured: caConfig?.isActive || false,
+        };
+      });
+    } catch (error) {
+      logger.error("Error getting CA services:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get CA's configured services (for public display and CA's own view)
+   */
+  async getCAConfiguredServices(caId, includeInactive = false) {
     try {
       const whereClause = { caId };
 
@@ -16,32 +87,145 @@ class CAServiceManagementService {
 
       const services = await CAService.findAll({
         where: whereClause,
-        order: [["serviceType", "ASC"]],
+        include: [
+          {
+            model: Service,
+            as: "service",
+            attributes: [
+              "id",
+              "name",
+              "description",
+              "category",
+              "requirements",
+              "deliverables",
+            ],
+          },
+        ],
+        order: [["createdAt", "DESC"]],
       });
 
       return services.map((service) => ({
         id: service.id,
-        serviceType: service.serviceType,
-        serviceName: service.serviceName,
-        description: service.description,
-        basePrice: parseFloat(service.basePrice),
+        serviceId: service.serviceId,
+        serviceName: service.service?.name,
+        serviceCategory: service.service?.category,
+        serviceDescription: service.service?.description,
+        serviceRequirements: service.service?.requirements || [],
+        serviceDeliverables: service.service?.deliverables || [],
+        customPrice: service.customPrice,
         currency: service.currency,
+        customDuration: service.customDuration,
+        experienceLevel: service.experienceLevel,
+        notes: service.notes,
         isActive: service.isActive,
-        estimatedDays: service.estimatedDays,
-        requirements: service.requirements,
-        features: service.features,
-        additionalCharges: service.additionalCharges,
         createdAt: service.createdAt,
         updatedAt: service.updatedAt,
       }));
     } catch (error) {
-      logger.error("Error getting CA services:", error);
+      logger.error("Error getting CA configured services:", error);
       throw error;
     }
   }
 
   /**
-   * Add or update CA service
+   * Associate CA with existing service from master Services table
+   */
+  async associateCAWithService(caId, serviceData) {
+    try {
+      const {
+        serviceId,
+        customPrice,
+        customDuration,
+        currency = "INR",
+        experienceLevel = "intermediate",
+        notes,
+        isActive = true,
+      } = serviceData; // Validate CA exists
+      const ca = await CA.findByPk(caId);
+      if (!ca) {
+        throw new Error("CA not found");
+      }
+
+      // Validate Service exists
+      const service = await Service.findByPk(serviceId);
+      if (!service) {
+        throw new Error("Service not found");
+      }
+
+      // Check if association already exists
+      const existingAssociation = await CAService.findOne({
+        where: { caId, serviceId },
+      });
+
+      let caService;
+      if (existingAssociation) {
+        // Update existing association
+        await existingAssociation.update({
+          customPrice,
+          customDuration,
+          currency,
+          experienceLevel,
+          notes,
+          isActive,
+        });
+        caService = existingAssociation;
+      } else {
+        // Create new association
+        caService = await CAService.create({
+          caId,
+          serviceId,
+          customPrice,
+          customDuration,
+          currency,
+          experienceLevel,
+          notes,
+          isActive,
+        });
+      }
+
+      // Include service details in response
+      await caService.reload({
+        include: [
+          {
+            model: Service,
+            as: "service",
+            attributes: [
+              "id",
+              "name",
+              "description",
+              "category",
+              "requirements",
+              "deliverables",
+            ],
+          },
+        ],
+      });
+
+      return {
+        id: caService.id,
+        serviceId: caService.serviceId,
+        serviceName: caService.service?.name,
+        serviceCategory: caService.service?.category,
+        serviceDescription: caService.service?.description,
+        serviceRequirements: caService.service?.requirements || [],
+        serviceDeliverables: caService.service?.deliverables || [],
+        customPrice: caService.customPrice,
+        currency: caService.currency,
+        customDuration: caService.customDuration,
+        experienceLevel: caService.experienceLevel,
+        notes: caService.notes,
+        isActive: caService.isActive,
+        createdAt: caService.createdAt,
+        updatedAt: caService.updatedAt,
+      };
+    } catch (error) {
+      logger.error("Error associating CA with service:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Add or update CA service (legacy method for backward compatibility)
    */
   async upsertCAService(caId, serviceData) {
     try {
@@ -400,58 +584,116 @@ class CAServiceManagementService {
   /**
    * Get CA services for public viewing (with basic info)
    */
-  async getCAServices(caId, serviceType = null) {
+  async getCAServicesForPublic(caId) {
     try {
-      const whereClause = { caId };
-      if (serviceType) {
-        whereClause.serviceType = serviceType;
-      }
+      const configuredServices = await this.getCAConfiguredServices(
+        caId,
+        false
+      );
 
-      const services = await CAService.findAll({
-        where: whereClause,
-        attributes: [
-          "id",
-          "serviceType",
-          "serviceName",
-          "description",
-          "basePrice",
-          "estimatedDays",
-          "requirements",
-          "features",
-        ],
-        order: [["serviceType", "ASC"]],
-      });
-
-      return services;
+      return configuredServices.map((service) => ({
+        id: service.id,
+        serviceName: service.serviceName,
+        serviceCategory: service.serviceCategory,
+        serviceDescription: service.serviceDescription,
+        serviceRequirements: service.serviceRequirements,
+        serviceDeliverables: service.serviceDeliverables,
+        price: service.customPrice,
+        currency: service.currency,
+        duration: service.customDuration,
+        experienceLevel: service.experienceLevel,
+        notes: service.notes,
+      }));
     } catch (error) {
-      logger.error("Error getting CA services:", error);
+      logger.error("Error getting CA services for public:", error);
       throw error;
     }
   }
 
   /**
-   * Get specific CA service by type
+   * Get all available services from master Services table
    */
-  async getCAServiceByType(caId, serviceType) {
+  async getAllAvailableServices() {
     try {
-      const service = await CAService.findOne({
-        where: { caId, serviceType },
-        attributes: [
-          "id",
-          "serviceType",
-          "serviceName",
-          "description",
-          "basePrice",
-          "estimatedDays",
-          "requirements",
-          "features",
-          "additionalCharges",
+      const services = await Service.findAll({
+        where: { isActive: true },
+        order: [
+          ["category", "ASC"],
+          ["name", "ASC"],
         ],
       });
 
-      return service;
+      return services.map((service) => ({
+        id: service.id,
+        name: service.name,
+        description: service.description,
+        category: service.category,
+        requirements: service.requirements || [],
+        deliverables: service.deliverables || [],
+        isActive: service.isActive,
+        createdAt: service.createdAt,
+        updatedAt: service.updatedAt,
+      }));
     } catch (error) {
-      logger.error("Error getting CA service by type:", error);
+      logger.error("Error getting available services:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get specific CA service by serviceId
+   */
+  async getCAServiceById(caId, serviceId) {
+    try {
+      const service = await CAService.findOne({
+        where: { caId, serviceId },
+        include: [
+          {
+            model: Service,
+            as: "service",
+            attributes: [
+              "id",
+              "name",
+              "description",
+              "category",
+              "requirements",
+              "deliverables",
+            ],
+          },
+        ],
+        attributes: [
+          "id",
+          "serviceId",
+          "customPrice",
+          "currency",
+          "customDuration",
+          "experienceLevel",
+          "notes",
+          "isActive",
+        ],
+      });
+
+      if (!service) {
+        return null;
+      }
+
+      return {
+        id: service.id,
+        serviceId: service.serviceId,
+        serviceName: service.service?.name,
+        serviceCategory: service.service?.category,
+        serviceDescription: service.service?.description,
+        serviceRequirements: service.service?.requirements || [],
+        serviceDeliverables: service.service?.deliverables || [],
+        customPrice: service.customPrice,
+        currency: service.currency,
+        customDuration: service.customDuration,
+        experienceLevel: service.experienceLevel,
+        notes: service.notes,
+        isActive: service.isActive,
+      };
+    } catch (error) {
+      logger.error("Error getting CA service by serviceId:", error);
       throw error;
     }
   }

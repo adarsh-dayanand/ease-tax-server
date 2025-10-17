@@ -38,26 +38,51 @@ class CAServiceController {
       const caId = req.user.id;
       const serviceData = req.body;
 
-      // Validate required fields
-      const { serviceType, serviceName, basePrice } = serviceData;
+      // Handle both old and new service creation patterns
+      if (serviceData.serviceId) {
+        // New pattern: Associate with existing service from master table
+        const { serviceId } = serviceData;
 
-      if (!serviceType || !serviceName || !basePrice) {
-        return res.status(400).json({
-          success: false,
-          message: "Service type, name, and base price are required",
+        if (!serviceId) {
+          return res.status(400).json({
+            success: false,
+            message: "Service ID is required",
+          });
+        }
+
+        const service = await caServiceManagementService.associateCAWithService(
+          caId,
+          serviceData
+        );
+
+        res.json({
+          success: true,
+          data: service,
+          message: "Service associated successfully",
+        });
+      } else {
+        // Legacy pattern: Create custom service (backward compatibility)
+        const { serviceType, serviceName, basePrice } = serviceData;
+
+        if (!serviceType || !serviceName || !basePrice) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Service type, name, and base price are required for custom services",
+          });
+        }
+
+        const service = await caServiceManagementService.upsertCAService(
+          caId,
+          serviceData
+        );
+
+        res.json({
+          success: true,
+          data: service,
+          message: "Custom service updated successfully",
         });
       }
-
-      const service = await caServiceManagementService.upsertCAService(
-        caId,
-        serviceData
-      );
-
-      res.json({
-        success: true,
-        data: service,
-        message: "Service updated successfully",
-      });
     } catch (error) {
       logger.error("Error in upsertService:", error);
       res.status(500).json({
@@ -153,6 +178,28 @@ class CAServiceController {
   }
 
   /**
+   * Get all available services from master table
+   * GET /ca-mgmt/services/available
+   */
+  async getAvailableServices(req, res) {
+    try {
+      const services =
+        await caServiceManagementService.getAllAvailableServices();
+
+      res.json({
+        success: true,
+        data: services,
+      });
+    } catch (error) {
+      logger.error("Error in getAvailableServices:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to get available services",
+      });
+    }
+  }
+
+  /**
    * Get service templates
    * GET /ca-mgmt/services/templates
    */
@@ -210,23 +257,11 @@ class CAServiceController {
     try {
       const { caId } = req.params;
 
-      const services = await caServiceManagementService.getCAServices(
-        caId,
-        false
-      );
+      const services =
+        await caServiceManagementService.getCAServicesForPublic(caId);
 
-      // Only return public information
-      const publicServices = services.map((service) => ({
-        id: service.id,
-        serviceType: service.serviceType,
-        serviceName: service.serviceName,
-        description: service.description,
-        basePrice: service.basePrice,
-        currency: service.currency,
-        estimatedDays: service.estimatedDays,
-        features: service.features,
-        additionalCharges: service.additionalCharges,
-      }));
+      // Services are already formatted for public display
+      const publicServices = services;
 
       res.json({
         success: true,

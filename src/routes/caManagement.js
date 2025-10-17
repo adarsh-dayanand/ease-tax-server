@@ -111,6 +111,12 @@ router.post(
 );
 
 router.get(
+  "/services/available",
+  rateLimit.apiRateLimit,
+  caServiceController.getAvailableServices
+);
+
+router.get(
   "/services/templates",
   rateLimit.apiRateLimit,
   caServiceController.getServiceTemplates
