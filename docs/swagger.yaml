@@ -1,0 +1,4493 @@
+openapi: 3.0.0
+info:
+  title: EaseTax Backend API
+  version: 1.0.0
+  description: Complete API documentation for EaseTax platform - connecting users with Chartered Accountants for ITR filing and tax services
+  contact:
+    name: EaseTax Support
+    email: support@easetax.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:3000/api
+    description: Development server
+  - url: https://api.easetax.com/api
+    description: Production server
+
+security:
+  - BearerAuth: []
+
+paths:
+  # Authentication APIs
+  /auth/user/google:
+    post:
+      summary: User Google Authentication
+      description: Login or register a user using Google OAuth via Firebase
+      tags:
+        - Authentication
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - idToken
+              properties:
+                idToken:
+                  type: string
+                  description: Firebase Google ID token
+                  example: "eyJhbGciOiJSUzI1NiIsImtpZCI6IjA..."
+      responses:
+        '200':
+          description: User authenticated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      user:
+                        $ref: '#/components/schemas/User'
+                      token:
+                        type: string
+                        description: JWT access token
+                      refreshToken:
+                        type: string
+                        description: JWT refresh token
+                      isNewUser:
+                        type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/ca/google:
+    post:
+      summary: CA Google Authentication
+      description: Login or register a CA using Google OAuth via Firebase
+      tags:
+        - Authentication
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - idToken
+              properties:
+                idToken:
+                  type: string
+                  description: Firebase Google ID token
+      responses:
+        '200':
+          description: CA authenticated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  data:
+                    type: object
+                    properties:
+                      ca:
+                        $ref: '#/components/schemas/CA'
+                      token:
+                        type: string
+                      refreshToken:
+                        type: string
+                      isNewCA:
+                        type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/ca/phone:
+    post:
+      summary: CA Phone Authentication
+      description: Login CA using phone number via Firebase Phone Auth
+      tags:
+        - Authentication
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - idToken
+              properties:
+                idToken:
+                  type: string
+                  description: Firebase Phone Auth ID token
+      responses:
+        '200':
+          description: CA authenticated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      ca:
+                        $ref: '#/components/schemas/CA'
+                      token:
+                        type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /auth/ca/request-registration:
+    post:
+      summary: Request CA Registration
+      description: Submit CA registration request for admin approval
+      tags:
+        - Authentication
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - email
+                - phone
+                - location
+              properties:
+                name:
+                  type: string
+                  example: "CA Rajesh Kumar"
+                email:
+                  type: string
+                  format: email
+                  example: "rajesh@example.com"
+                phone:
+                  type: string
+                  example: "+91-9876543210"
+                location:
+                  type: string
+                  example: "Mumbai, Maharashtra"
+                specializations:
+                  type: array
+                  items:
+                    type: string
+                  example: ["Income Tax", "GST"]
+                documents:
+                  type: array
+                  items:
+                    type: string
+                  description: URLs of uploaded documents
+      responses:
+        '200':
+          description: Registration request submitted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        example: "CA registration request submitted successfully"
+                      requestId:
+                        type: string
+                        format: uuid
+                      status:
+                        type: string
+                        example: "pending_admin_review"
+        '409':
+          description: CA already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/admin/google:
+    post:
+      summary: Admin Google Authentication
+      description: Login admin using Google OAuth via Firebase (pre-registered only)
+      tags:
+        - Authentication
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - idToken
+              properties:
+                idToken:
+                  type: string
+                  description: Firebase Google ID token
+      responses:
+        '200':
+          description: Admin authenticated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      admin:
+                        $ref: '#/components/schemas/Admin'
+                      message:
+                        type: string
+        '401':
+          description: Admin not found or inactive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/admin/create-super-admin:
+    post:
+      summary: Create Super Admin (Development Only)
+      description: Create first super admin account - only works in development mode
+      tags:
+        - Authentication
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - email
+              properties:
+                name:
+                  type: string
+                  example: "System Administrator"
+                email:
+                  type: string
+                  format: email
+                  example: "admin@easetax.com"
+                googleUid:
+                  type: string
+                  description: Google UID (optional)
+      responses:
+        '200':
+          description: Super admin created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      admin:
+                        $ref: '#/components/schemas/Admin'
+                      message:
+                        type: string
+        '404':
+          description: Endpoint not available in production
+        '409':
+          description: Super admin already exists
+
+  /auth/admin/profile:
+    get:
+      summary: Get Admin Profile
+      description: Get authenticated admin's profile information
+      tags:
+        - Authentication
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Admin profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      admin:
+                        $ref: '#/components/schemas/Admin'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # User Management APIs
+  /users/{userId}:
+    get:
+      summary: Get User Profile
+      description: Retrieve user profile information with recent filings
+      tags:
+        - User Management
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: User profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/UserProfile'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    put:
+      summary: Update User Profile
+      description: Update user profile information
+      tags:
+        - User Management
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdateRequest'
+      responses:
+        '200':
+          description: Profile updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/UserProfile'
+                  message:
+                    type: string
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /users/{userId}/consultations:
+    get:
+      summary: Get User Consultations
+      description: Retrieve user's consultation history with pagination
+      tags:
+        - User Management
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Consultations retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Consultation'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+    post:
+      summary: Book New Consultation
+      description: Book a consultation with a CA
+      tags:
+        - User Management
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+      responses:
+        '201':
+          description: Consultation booked successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Consultation'
+                  message:
+                    type: string
+
+  /users/{userId}/filings:
+    get:
+      summary: Get User Filings
+      description: Retrieve user's completed filings history
+      tags:
+        - User Management
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Filings retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Filing'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  /users/{userId}/payments:
+    get:
+      summary: Get User Payments
+      description: Retrieve user's payment history
+      tags:
+        - User Management
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Payments retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Payment'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  /users/{userId}/dashboard:
+    get:
+      summary: Get User Dashboard
+      description: Get comprehensive dashboard data for user
+      tags:
+        - User Management
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Dashboard data retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/UserDashboard'
+
+  # CA Management APIs
+  /ca:
+    get:
+      summary: Search and List CAs
+      description: Search for CAs with filters and pagination
+      tags:
+        - CA Management
+      parameters:
+        - name: location
+          in: query
+          schema:
+            type: string
+          description: Filter by location
+        - name: specialization
+          in: query
+          schema:
+            type: string
+          description: Filter by specialization
+        - name: minRating
+          in: query
+          schema:
+            type: number
+            format: float
+          description: Minimum rating filter
+        - name: maxPrice
+          in: query
+          schema:
+            type: number
+          description: Maximum price filter
+        - name: availability
+          in: query
+          schema:
+            type: string
+            enum:
+              - today
+              - tomorrow
+              - this_week
+          description: Availability filter
+        - name: sortBy
+          in: query
+          schema:
+            type: string
+            enum:
+              - rating
+              - price
+              - experience
+          description: Sort criteria
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: CAs retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CAListItem'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+                  filters:
+                    type: object
+
+  /ca/popular:
+    get:
+      summary: Get Popular CAs
+      description: Get list of popular/top-rated CAs
+      tags:
+        - CA Management
+      security: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Popular CAs retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CAListItem'
+
+  /ca/specializations:
+    get:
+      summary: Get CA Specializations
+      description: Get list of available CA specializations
+      tags:
+        - CA Management
+      security: []
+      responses:
+        '200':
+          description: Specializations retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Specialization'
+
+  /ca/{caId}:
+    get:
+      summary: Get CA Profile
+      description: Get detailed CA profile information
+      tags:
+        - CA Management
+      parameters:
+        - name: caId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: CA profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/CAProfile'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /ca/{caId}/reviews:
+    get:
+      summary: Get CA Reviews
+      description: Get reviews for a specific CA with pagination
+      tags:
+        - CA Management
+      parameters:
+        - name: caId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Reviews retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Review'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  /ca/{caId}/consultation-slots:
+    get:
+      summary: Get CA Availability Slots
+      description: Get available consultation slots for a CA
+      tags:
+        - CA Management
+      parameters:
+        - name: caId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Availability slots retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AvailabilitySlot'
+
+  /ca/{caId}/request:
+    post:
+      summary: Request Consultation
+      description: Send consultation request to a CA
+      tags:
+        - CA Management
+      parameters:
+        - name: caId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsultationRequest'
+      responses:
+        '201':
+          description: Consultation request sent successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        format: uuid
+                      status:
+                        type: string
+                      message:
+                        type: string
+
+  # CA Management APIs (For CAs)
+  /ca-mgmt/requests:
+    get:
+      summary: Get CA's Service Requests
+      description: Get all service requests assigned to the authenticated CA
+      tags:
+        - CA Management (CA Access)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, accepted, in_progress, completed, rejected]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Service requests retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ServiceRequest'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  /ca-mgmt/requests/{requestId}/accept:
+    post:
+      summary: Accept Service Request
+      description: Accept a pending service request
+      tags:
+        - CA Management (CA Access)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                estimatedAmount:
+                  type: number
+                  example: 2500
+                estimatedDays:
+                  type: integer
+                  example: 7
+                notes:
+                  type: string
+      responses:
+        '200':
+          description: Request accepted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/ServiceRequest'
+
+  /ca-mgmt/requests/{requestId}/reject:
+    post:
+      summary: Reject Service Request
+      description: Reject a pending service request
+      tags:
+        - CA Management (CA Access)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - reason
+              properties:
+                reason:
+                  type: string
+                  example: "Currently unavailable for this service type"
+      responses:
+        '200':
+          description: Request rejected successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
+  /ca-mgmt/requests/{requestId}/update-status:
+    post:
+      summary: Update Service Request Status
+      description: Update status of an accepted service request
+      tags:
+        - CA Management (CA Access)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum: [in_progress, completed, on_hold]
+                progress:
+                  type: integer
+                  minimum: 0
+                  maximum: 100
+                notes:
+                  type: string
+                documents:
+                  type: array
+                  items:
+                    type: string
+                  description: Document URLs for completion
+      responses:
+        '200':
+          description: Status updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/ServiceRequest'
+
+  # CA Service Management APIs (For CAs)
+  /ca-mgmt/services:
+    get:
+      summary: Get CA's Services and Pricing
+      description: Get all services offered by the authenticated CA with their pricing
+      tags:
+        - CA Service Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: serviceType
+          in: query
+          schema:
+            type: string
+            enum: [itr_filing, gst_registration, gst_filing, company_registration, tax_planning, audit_services, compliance_check, financial_consultation]
+      responses:
+        '200':
+          description: CA services retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CAService'
+
+    post:
+      summary: Create or Update CA Service
+      description: Create a new service or update existing service pricing
+      tags:
+        - CA Service Management
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CAServiceInput'
+      responses:
+        '200':
+          description: Service created/updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/CAService'
+
+  /ca-mgmt/services/{serviceId}:
+    put:
+      summary: Update Specific CA Service
+      description: Update a specific service by ID
+      tags:
+        - CA Service Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: serviceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CAServiceInput'
+      responses:
+        '200':
+          description: Service updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/CAService'
+
+    delete:
+      summary: Delete CA Service
+      description: Delete a specific service offering
+      tags:
+        - CA Service Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: serviceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Service deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
+  /ca-mgmt/services/bulk-update:
+    post:
+      summary: Bulk Update CA Services
+      description: Update multiple services at once
+      tags:
+        - CA Service Management
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                services:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/CAServiceInput'
+      responses:
+        '200':
+          description: Services updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CAService'
+
+  /ca-mgmt/services/templates:
+    get:
+      summary: Get Service Pricing Templates
+      description: Get dynamic service templates from database with suggested pricing, requirements, and features. CAs can use these as starting points and customize pricing for their services.
+      tags:
+        - CA Service Management
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Service templates retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ServiceTemplate'
+
+  /ca-mgmt/services/initialize-defaults:
+    post:
+      summary: Initialize Default Services
+      description: Initialize CA account with services based on dynamic templates from database. CAs can select specific service types or initialize with basic/intermediate services by default.
+      tags:
+        - CA Service Management
+      security:
+        - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                selectedServices:
+                  type: array
+                  items:
+                    type: string
+                    enum: [itr_filing, gst_registration, gst_filing, company_registration, tax_planning, audit_services, compliance_check, financial_consultation]
+                  description: "Optional array of specific service types to initialize. If not provided, basic and intermediate services will be initialized."
+                  example: ["itr_filing", "gst_filing", "tax_planning"]
+      responses:
+        '200':
+          description: Default services initialized successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CAService'
+                  message:
+                    type: string
+
+  # Public CA Service APIs
+  /ca/{caId}/services:
+    get:
+      summary: Get CA's Public Services
+      description: Get publicly viewable services and pricing for a specific CA
+      tags:
+        - CA Management
+      security: []
+      parameters:
+        - name: caId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: serviceType
+          in: query
+          schema:
+            type: string
+            enum: [itr_filing, gst_registration, gst_filing, company_registration, tax_planning, audit_services, compliance_check, financial_consultation]
+      responses:
+        '200':
+          description: CA services retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  services:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CAServicePublic'
+
+  # Admin Management APIs
+  /admin/cas:
+    get:
+      summary: Get All CAs (Admin)
+      description: Get list of all CAs with admin filters
+      tags:
+        - Admin Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [verified, pending, suspended]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: CAs retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CA'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  /admin/cas/pending-verification:
+    get:
+      summary: Get Pending CA Verifications
+      description: Get CAs waiting for admin verification
+      tags:
+        - Admin Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Pending CAs retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CA'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  /admin/cas/register:
+    post:
+      summary: Register New CA (Admin)
+      description: Admin registers a new CA account
+      tags:
+        - Admin Management
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - email
+                - phone
+                - location
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                phone:
+                  type: string
+                location:
+                  type: string
+                specializations:
+                  type: array
+                  items:
+                    type: string
+                autoVerify:
+                  type: boolean
+                  default: false
+      responses:
+        '201':
+          description: CA registered successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/CA'
+
+  /admin/cas/{caId}/verify:
+    put:
+      summary: Verify CA Account
+      description: Admin verifies a pending CA account
+      tags:
+        - Admin Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: caId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                verificationNotes:
+                  type: string
+      responses:
+        '200':
+          description: CA verified successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/CA'
+
+  /admin/cas/{caId}/reject:
+    post:
+      summary: Reject CA Verification
+      description: Admin rejects a CA verification request
+      tags:
+        - Admin Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: caId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - rejectionReason
+              properties:
+                rejectionReason:
+                  type: string
+      responses:
+        '200':
+          description: CA rejected successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/CA'
+
+  /admin/cas/{caId}/suspend:
+    post:
+      summary: Suspend CA Account
+      description: Admin suspends a CA account
+      tags:
+        - Admin Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: caId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - suspensionReason
+              properties:
+                suspensionReason:
+                  type: string
+      responses:
+        '200':
+          description: CA suspended successfully
+
+  /admin/cas/{caId}/activate:
+    post:
+      summary: Activate CA Account
+      description: Admin activates a suspended CA account
+      tags:
+        - Admin Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: caId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                activationNotes:
+                  type: string
+      responses:
+        '200':
+          description: CA activated successfully
+
+  /admin/users:
+    get:
+      summary: Get All Users (Admin)
+      description: Get list of all users with admin filters
+      tags:
+        - Admin Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, suspended]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Users retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/User'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  /admin/users/{userId}/suspend:
+    post:
+      summary: Suspend User Account
+      description: Admin suspends a user account
+      tags:
+        - Admin Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - suspensionReason
+              properties:
+                suspensionReason:
+                  type: string
+      responses:
+        '200':
+          description: User suspended successfully
+
+  /admin/users/{userId}/activate:
+    post:
+      summary: Activate User Account
+      description: Admin activates a suspended user account
+      tags:
+        - Admin Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                activationNotes:
+                  type: string
+      responses:
+        '200':
+          description: User activated successfully
+
+  /admin/service-requests:
+    get:
+      summary: Get All Service Requests (Admin)
+      description: Get list of all service requests with admin filters
+      tags:
+        - Admin Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Service requests retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ServiceRequest'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  /admin/service-requests/escalated:
+    get:
+      summary: Get Escalated Requests
+      description: Get service requests that have been escalated
+      tags:
+        - Admin Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Escalated requests retrieved successfully
+
+  /admin/service-requests/{requestId}/assign-ca:
+    post:
+      summary: Assign CA to Request
+      description: Admin assigns a CA to a service request
+      tags:
+        - Admin Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - caId
+              properties:
+                caId:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: CA assigned successfully
+
+  /admin/dashboard:
+    get:
+      summary: Get Admin Dashboard
+      description: Get comprehensive admin dashboard analytics
+      tags:
+        - Admin Management
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Dashboard data retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/AdminDashboard'
+
+  /admin/analytics/revenue:
+    get:
+      summary: Get Revenue Analytics
+      description: Get revenue analytics for specified period
+      tags:
+        - Admin Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [7d, 30d, 90d, 1y]
+            default: 30d
+      responses:
+        '200':
+          description: Revenue analytics retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/RevenueAnalytics'
+
+  /admin/analytics/ca-performance:
+    get:
+      summary: Get CA Performance Analytics
+      description: Get CA performance metrics for specified period
+      tags:
+        - Admin Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [7d, 30d, 90d]
+            default: 30d
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: CA performance analytics retrieved successfully
+
+  /admin/system/config:
+    get:
+      summary: Get System Configuration
+      description: Get current system configuration
+      tags:
+        - Admin Management
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: System configuration retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/SystemConfig'
+
+    put:
+      summary: Update System Configuration
+      description: Update system configuration settings
+      tags:
+        - Admin Management
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemConfigUpdate'
+      responses:
+        '200':
+          description: System configuration updated successfully
+
+  # Consultation Management APIs
+  /consultations/{consultationId}:
+    get:
+      summary: Get Consultation Details
+      description: Get detailed information about a consultation
+      tags:
+        - Consultation Management
+      parameters:
+        - name: consultationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Consultation details retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/ConsultationDetails'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /consultations/{consultationId}/reschedule:
+    put:
+      summary: Reschedule Consultation
+      description: Reschedule an existing consultation
+      tags:
+        - Consultation Management
+      parameters:
+        - name: consultationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - date
+                - time
+              properties:
+                date:
+                  type: string
+                  format: date
+                time:
+                  type: string
+                  format: time
+      responses:
+        '200':
+          description: Consultation rescheduled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/ConsultationDetails'
+                  message:
+                    type: string
+
+  /consultations/{consultationId}/cancel:
+    post:
+      summary: Cancel Consultation
+      description: Cancel an existing consultation
+      tags:
+        - Consultation Management
+      parameters:
+        - name: consultationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  description: Cancellation reason
+      responses:
+        '200':
+          description: Consultation cancelled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      refundAmount:
+                        type: number
+                      message:
+                        type: string
+
+  /consultations/{consultationId}/status:
+    put:
+      summary: Update Consultation Status
+      description: Update consultation status (CA only)
+      tags:
+        - Consultation Management
+      parameters:
+        - name: consultationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum:
+                    - pending
+                    - accepted
+                    - rejected
+                    - in_progress
+                    - completed
+                    - cancelled
+                    - escalated
+      responses:
+        '200':
+          description: Status updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/ConsultationDetails'
+
+  /consultations/{consultationId}/messages:
+    get:
+      summary: Get Consultation Messages
+      description: Get chat messages for a consultation (read-only via REST)
+      tags:
+        - Consultation Management
+      parameters:
+        - name: consultationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Messages retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Message'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  /consultations/{consultationId}/documents:
+    get:
+      summary: Get Consultation Documents
+      description: Get documents uploaded for a consultation
+      tags:
+        - Consultation Management
+      parameters:
+        - name: consultationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Documents retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Document'
+
+  # Document Management APIs
+  /documents/upload:
+    post:
+      summary: Upload Document
+      description: Upload document to S3 storage
+      tags:
+        - Document Management
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - document
+                - serviceRequestId
+                - fileType
+              properties:
+                document:
+                  type: string
+                  format: binary
+                serviceRequestId:
+                  type: string
+                  format: uuid
+                fileType:
+                  type: string
+                  enum:
+                    - form16
+                    - bank_statement
+                    - pan_card
+                    - aadhar_card
+                    - itr_form
+                    - itr_v
+                    - other
+      responses:
+        '201':
+          description: Document uploaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Document'
+                  message:
+                    type: string
+
+  /documents/{documentId}/download:
+    get:
+      summary: Download Document
+      description: Get secure download URL for document
+      tags:
+        - Document Management
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Download URL generated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      downloadUrl:
+                        type: string
+                        description: Presigned S3 URL
+                      filename:
+                        type: string
+                      fileSize:
+                        type: integer
+                      contentType:
+                        type: string
+
+  /documents/{documentId}:
+    delete:
+      summary: Delete Document
+      description: Delete document from storage
+      tags:
+        - Document Management
+      parameters:
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Document deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
+  # Payment APIs
+  /payments/initiate:
+    post:
+      summary: Initiate Payment
+      description: Initiate payment for consultation or service
+      tags:
+        - Payment Management
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentInitiateRequest'
+      responses:
+        '201':
+          description: Payment initiated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/PaymentInitiateResponse'
+
+  /payments/{paymentId}/status:
+    get:
+      summary: Get Payment Status
+      description: Get current status of a payment
+      tags:
+        - Payment Management
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Payment status retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/PaymentStatus'
+
+  /payments/history:
+    get:
+      summary: Get Payment History
+      description: Get user's payment history with pagination
+      tags:
+        - Payment Management
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        '200':
+          description: Payment history retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Payment'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  # Notification APIs
+  /notifications:
+    get:
+      summary: Get Notifications
+      description: Get user notifications with pagination
+      tags:
+        - Notification Management
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: unreadOnly
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Notifications retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Notification'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+
+  /notifications/mark-read:
+    post:
+      summary: Mark Notifications as Read
+      description: Mark one or more notifications as read
+      tags:
+        - Notification Management
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notificationIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                markAllAsRead:
+                  type: boolean
+                  default: false
+      responses:
+        '200':
+          description: Notifications marked as read
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
+  # WebSocket Event Handlers (Real-time Communication)
+  /websocket/connect:
+    post:
+      tags:
+        - WebSocket Events
+      summary: Establish WebSocket Connection
+      description: |
+        **WebSocket Connection Endpoint**
+        
+        Connect to: `ws://localhost:3000` or `wss://your-domain.com`
+        
+        **Authentication:**
+        Send JWT token in connection handshake:
+        ```javascript
+        const socket = io('ws://localhost:3000', {
+          auth: {
+            token: 'your-jwt-token'
+          }
+        });
+        ```
+        
+        **Connection Events:**
+        - `connect` - Connection established
+        - `disconnect` - Connection closed
+        - `error` - Connection error
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+                  description: JWT authentication token
+                  example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+      responses:
+        '200':
+          description: WebSocket connection established
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "WebSocket connection established"
+                  userId:
+                    type: string
+                    format: uuid
+                  userType:
+                    type: string
+                    enum: 
+                      - user
+                      - ca
+
+  /websocket/join-consultation:
+    post:
+      tags:
+        - WebSocket Events
+      summary: Join Consultation Room
+      description: |
+        **Event Name:** `join_service_request`
+        
+        Join a consultation room for real-time chat
+        
+        **Usage:**
+        ```javascript
+        socket.emit('join_service_request', {
+          serviceRequestId: 'consultation-uuid'
+        });
+        ```
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - serviceRequestId
+              properties:
+                serviceRequestId:
+                  type: string
+                  format: uuid
+                  description: Consultation/Service Request ID
+                  example: "123e4567-e89b-12d3-a456-426614174000"
+      responses:
+        '200':
+          description: Successfully joined consultation room
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Joined consultation room"
+                  onlineUsers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        userId:
+                          type: string
+                          format: uuid
+                        userName:
+                          type: string
+                        userType:
+                          type: string
+                          enum: 
+                            - user
+                            - ca
+
+  /websocket/send-message:
+    post:
+      tags:
+        - WebSocket Events
+      summary: Send Real-time Message
+      description: |
+        **Event Name:** `send_message`
+        
+        Send a message in real-time to a consultation room
+        
+        **Usage:**
+        ```javascript
+        socket.emit('send_message', {
+          serviceRequestId: 'consultation-uuid',
+          message: 'Hello, I have a question about my tax filing',
+          attachmentUrl: 'optional-file-url'
+        });
+        ```
+        
+        **Received Events:**
+        - `message_received` - New message from other participants
+        - `message_sent` - Confirmation of your sent message
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - serviceRequestId
+                - message
+              properties:
+                serviceRequestId:
+                  type: string
+                  format: uuid
+                  description: Consultation/Service Request ID
+                  example: "123e4567-e89b-12d3-a456-426614174000"
+                message:
+                  type: string
+                  description: Message content
+                  example: "Hello, I have a question about my tax filing"
+                attachmentUrl:
+                  type: string
+                  description: Optional file attachment URL
+                  example: "https://s3.amazonaws.com/bucket/file.pdf"
+      responses:
+        '200':
+          description: Message sent successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebSocketMessage'
+
+  /websocket/notification-events:
+    get:
+      tags:
+        - WebSocket Events
+      summary: Real-time Notification Events
+      description: |
+        **Event Name:** `notification`
+        
+        Receive real-time notifications via WebSocket
+        
+        **Auto-join Room:** User automatically joins `user_{userId}` or `ca_{caId}` room
+        
+        **Received Events:**
+        ```javascript
+        socket.on('notification', (data) => {
+          console.log('New notification:', data);
+          // Handle notification display in UI
+        });
+        ```
+        
+        **Notification Types:**
+        - `consultation_requested` - New consultation request
+        - `consultation_accepted` - Consultation accepted
+        - `payment_successful` - Payment completed
+        - `document_uploaded` - New document uploaded
+        - `meeting_scheduled` - Meeting scheduled
+      responses:
+        '200':
+          description: Notification event structure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebSocketNotification'
+
+  /websocket/user-status:
+    get:
+      tags:
+        - WebSocket Events
+      summary: User Online Status Events
+      description: |
+        **Automatic Events:**
+        
+        Track user online/offline status in consultation rooms
+        
+        **Received Events:**
+        ```javascript
+        socket.on('user_joined', (data) => {
+          console.log('User joined:', data.userName);
+        });
+        
+        socket.on('user_left', (data) => {
+          console.log('User left:', data.userName);
+        });
+        
+        socket.on('typing_start', (data) => {
+          console.log(data.userName + ' is typing...');
+        });
+        
+        socket.on('typing_stop', (data) => {
+          // Hide typing indicator
+        });
+        ```
+      responses:
+        '200':
+          description: User status event structure
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event:
+                    type: string
+                    enum: 
+                      - user_joined
+                      - user_left
+                      - typing_start
+                      - typing_stop
+                  userId:
+                    type: string
+                    format: uuid
+                  userName:
+                    type: string
+                  userType:
+                    type: string
+                    enum: 
+                      - user
+                      - ca
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  # Video Call APIs
+  /vc/schedule:
+    post:
+      summary: Schedule Video Call
+      description: Schedule a video call meeting via third-party integration
+      tags:
+        - Video Call Management
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduleMeetingRequest'
+      responses:
+        '201':
+          description: Meeting scheduled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Meeting'
+
+  /vc/{meetingId}/reschedule:
+    put:
+      summary: Reschedule Video Call
+      description: Reschedule an existing video call meeting
+      tags:
+        - Video Call Management
+      parameters:
+        - name: meetingId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - newDateTime
+              properties:
+                newDateTime:
+                  type: string
+                  format: date-time
+      responses:
+        '200':
+          description: Meeting rescheduled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Meeting'
+
+  /vc/{meetingId}/status:
+    get:
+      summary: Get Meeting Status
+      description: Get current status and details of a video call meeting
+      tags:
+        - Video Call Management
+      parameters:
+        - name: meetingId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Meeting status retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/MeetingStatus'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+  schemas:
+    # Core User Schemas
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        name:
+          type: string
+          example: "Amit Kumar"
+        email:
+          type: string
+          format: email
+          example: "amit@example.com"
+        phone:
+          type: string
+          nullable: true
+          example: "+91-9876543210"
+        profileImage:
+          type: string
+          nullable: true
+          example: "https://lh3.googleusercontent.com/..."
+        pan:
+          type: string
+          nullable: true
+          example: "ABCDE1234F"
+        gstin:
+          type: string
+          nullable: true
+          example: "29ABCDE1234F1Z5"
+        phoneVerified:
+          type: boolean
+          example: false
+        lastLogin:
+          type: string
+          format: date-time
+          example: "2024-03-15T10:30:00Z"
+
+    UserProfile:
+      allOf:
+        - $ref: '#/components/schemas/User'
+        - type: object
+          properties:
+            avatar:
+              type: string
+              description: Profile image URL
+            role:
+              type: string
+              enum:
+                - user
+              default: user
+            recentFilings:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  year:
+                    type: string
+                    example: "AY 2024-25"
+                  status:
+                    type: string
+                  ca:
+                    type: string
+                  filedDate:
+                    type: string
+                    format: date-time
+                  refundAmount:
+                    type: string
+                    example: "₹15,000"
+            loading:
+              type: boolean
+              default: false
+            error:
+              type: string
+              nullable: true
+
+    UserUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+        pan:
+          type: string
+        gstin:
+          type: string
+        profileImage:
+          type: string
+
+    UserDashboard:
+      type: object
+      properties:
+        profile:
+          $ref: '#/components/schemas/UserProfile'
+        recentConsultations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Consultation'
+        recentFilings:
+          type: array
+          items:
+            $ref: '#/components/schemas/Filing'
+        recentPayments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Payment'
+        stats:
+          type: object
+          properties:
+            totalConsultations:
+              type: integer
+            completedFilings:
+              type: integer
+            totalPayments:
+              type: integer
+
+    # CA Schemas
+    CA:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "456e7890-e12b-34d5-a678-426614174000"
+        name:
+          type: string
+          example: "CA Rajesh Kumar"
+        email:
+          type: string
+          format: email
+          example: "rajesh@example.com"
+        phone:
+          type: string
+          example: "+91-9876543210"
+        location:
+          type: string
+          nullable: true
+          example: "Mumbai, Maharashtra"
+        image:
+          type: string
+          nullable: true
+          example: "https://lh3.googleusercontent.com/..."
+        verified:
+          type: boolean
+          example: false
+          description: Whether CA is verified by admin
+        completedFilings:
+          type: integer
+          example: 450
+        phoneVerified:
+          type: boolean
+          example: true
+        lastLogin:
+          type: string
+          format: date-time
+          example: "2024-03-15T10:30:00Z"
+        rating:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 5
+          example: 4.5
+          description: Average rating from reviews
+        reviewCount:
+          type: integer
+          example: 124
+          description: Total number of reviews
+        basePrice:
+          type: number
+          format: float
+          example: 2500.00
+          description: Base service price
+        currency:
+          type: string
+          example: "INR"
+          default: "INR"
+        bio:
+          type: string
+          nullable: true
+          example: "Experienced CA specializing in tax consultation and filing services"
+        qualifications:
+          type: array
+          items:
+            type: string
+          example: ["Chartered Accountant", "Tax Consultant"]
+        languages:
+          type: array
+          items:
+            type: string
+          example: ["English", "Hindi"]
+        successRate:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+          example: 95.0
+          description: Success rate percentage
+        clientRetention:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+          example: 85.0
+          description: Client retention percentage
+        experienceYears:
+          type: integer
+          example: 8
+          description: Years of experience
+
+    CAListItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "CA Rajesh Kumar"
+        specialization:
+          type: string
+          example: "Income Tax & GST"
+        experience:
+          type: string
+          example: "8 years"
+        rating:
+          type: number
+          format: float
+          example: 4.8
+        reviewCount:
+          type: integer
+          example: 124
+        location:
+          type: string
+          example: "Mumbai, Maharashtra"
+        price:
+          type: string
+          example: "₹2,500"
+        currency:
+          type: string
+          example: "INR"
+        availability:
+          type: string
+          example: "Available Today"
+        image:
+          type: string
+        verified:
+          type: boolean
+        completedFilings:
+          type: integer
+
+    CAProfile:
+      allOf:
+        - $ref: '#/components/schemas/CAListItem'
+        - type: object
+          properties:
+            bio:
+              type: string
+            qualifications:
+              type: array
+              items:
+                type: string
+            languages:
+              type: array
+              items:
+                type: string
+              example: ["English", "Hindi", "Marathi"]
+            successRate:
+              type: number
+              format: float
+              example: 95.5
+            clientRetention:
+              type: number
+              format: float
+              example: 85.0
+            services:
+              type: array
+              items:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  name:
+                    type: string
+                    example: "ITR Filing"
+                  description:
+                    type: string
+                    example: "Income Tax Return filing for individuals and businesses"
+                  category:
+                    type: string
+                    enum: ['tax_filing', 'tax_planning', 'gst', 'audit', 'consultation', 'compliance', 'business_setup']
+                    example: "tax_filing"
+                  price:
+                    type: number
+                    format: float
+                    example: 2500.00
+                  duration:
+                    type: integer
+                    description: Duration in minutes
+                    example: 180
+                  currency:
+                    type: string
+                    example: "INR"
+                  experienceLevel:
+                    type: string
+                    enum: ['beginner', 'intermediate', 'expert']
+                    example: "intermediate"
+                  requirements:
+                    type: array
+                    items:
+                      type: string
+                    example: ["PAN Card", "Form 16", "Bank Statements"]
+                  deliverables:
+                    type: array
+                    items:
+                      type: string
+                    example: ["Filed ITR", "Acknowledgment Receipt"]
+                  notes:
+                    type: string
+                    nullable: true
+            specialties:
+              type: array
+              items:
+                type: string
+            availability:
+              type: object
+              properties:
+                days:
+                  type: array
+                  items:
+                    type: string
+                hours:
+                  type: string
+                  example: "9:00 AM - 6:00 PM"
+            reviews:
+              type: array
+              items:
+                $ref: '#/components/schemas/Review'
+
+    # Service Schemas
+    Service:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "789e4567-e89b-12d3-a456-426614174000"
+        name:
+          type: string
+          example: "ITR Filing"
+        description:
+          type: string
+          example: "Income Tax Return filing for individuals and businesses"
+        category:
+          type: string
+          enum: ['tax_filing', 'tax_planning', 'gst', 'audit', 'consultation', 'compliance', 'business_setup']
+          example: "tax_filing"
+        basePrice:
+          type: number
+          format: decimal
+          example: 2500.00
+        currency:
+          type: string
+          example: "INR"
+        duration:
+          type: integer
+          description: Duration in minutes
+          example: 180
+        isActive:
+          type: boolean
+          example: true
+        requirements:
+          type: array
+          items:
+            type: string
+          example: ["PAN Card", "Form 16", "Bank Statements"]
+        deliverables:
+          type: array
+          items:
+            type: string
+          example: ["Filed ITR", "Acknowledgment Receipt"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    # CA Service Junction Schema
+    CAService:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "789e4567-e89b-12d3-a456-426614174000"
+        caId:
+          type: string
+          format: uuid
+        serviceId:
+          type: string
+          format: uuid
+        customPrice:
+          type: number
+          format: decimal
+          nullable: true
+          example: 3000.00
+          description: Custom price set by CA, if null uses service base price
+        customDuration:
+          type: integer
+          nullable: true
+          example: 240
+          description: Custom duration in minutes, if null uses service base duration
+        isActive:
+          type: boolean
+          example: true
+        experienceLevel:
+          type: string
+          enum: ['beginner', 'intermediate', 'expert']
+          example: "intermediate"
+        notes:
+          type: string
+          nullable: true
+          example: "Specialized in complex business returns"
+        # Legacy fields for backward compatibility
+        serviceType:
+          type: string
+          enum: [itr_filing, gst_registration, gst_filing, company_registration, tax_planning, audit_services, compliance_check, financial_consultation]
+          nullable: true
+        serviceName:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        basePrice:
+          type: number
+          format: decimal
+          nullable: true
+        estimatedDays:
+          type: integer
+          nullable: true
+        requirements:
+          type: array
+          items:
+            type: string
+        features:
+          type: array
+          items:
+            type: string
+        additionalCharges:
+          type: object
+        currency:
+          type: string
+          default: "INR"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ServiceInput:
+      type: object
+      required:
+        - name
+        - category
+      properties:
+        name:
+          type: string
+          example: "ITR Filing"
+        description:
+          type: string
+          example: "Income Tax Return filing for individuals and businesses"
+        category:
+          type: string
+          enum: ['tax_filing', 'tax_planning', 'gst', 'audit', 'consultation', 'compliance', 'business_setup']
+        basePrice:
+          type: number
+          format: decimal
+          example: 2500.00
+        currency:
+          type: string
+          example: "INR"
+        duration:
+          type: integer
+          description: Duration in minutes
+          example: 180
+        requirements:
+          type: array
+          items:
+            type: string
+        deliverables:
+          type: array
+          items:
+            type: string
+        isActive:
+          type: boolean
+          default: true
+
+    CAServiceInput:
+      type: object
+      required:
+        - serviceId
+      properties:
+        serviceId:
+          type: string
+          format: uuid
+          example: "550e8400-e29b-41d4-a716-446655440001"
+        customPrice:
+          type: number
+          format: decimal
+          nullable: true
+          example: 3000.00
+        customDuration:
+          type: integer
+          nullable: true
+          example: 240
+        experienceLevel:
+          type: string
+          enum: ['beginner', 'intermediate', 'expert']
+          default: 'intermediate'
+        notes:
+          type: string
+          nullable: true
+        # Legacy fields for backward compatibility
+        serviceType:
+          type: string
+          enum: [itr_filing, gst_registration, gst_filing, company_registration, tax_planning, audit_services, compliance_check, financial_consultation]
+          nullable: true
+        serviceName:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        basePrice:
+          type: number
+          format: decimal
+          nullable: true
+        estimatedDays:
+          type: integer
+          nullable: true
+        requirements:
+          type: array
+          items:
+            type: string
+        features:
+          type: array
+          items:
+            type: string
+        additionalCharges:
+          type: object
+          additionalProperties:
+            type: number
+        isActive:
+          type: boolean
+          default: true
+
+    CAServicePublic:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        serviceType:
+          type: string
+          enum: [itr_filing, gst_registration, gst_filing, company_registration, tax_planning, audit_services, compliance_check, financial_consultation]
+        serviceName:
+          type: string
+        description:
+          type: string
+        basePrice:
+          type: number
+          format: decimal
+        estimatedDays:
+          type: integer
+        requirements:
+          type: array
+          items:
+            type: string
+        features:
+          type: array
+          items:
+            type: string
+
+    ServiceTemplate:
+      type: object
+      properties:
+        serviceType:
+          type: string
+          enum: [itr_filing, gst_registration, gst_filing, company_registration, tax_planning, audit_services, compliance_check, financial_consultation]
+          example: "itr_filing"
+        serviceName:
+          type: string
+          example: "Income Tax Return Filing"
+        description:
+          type: string
+          example: "Complete ITR filing service including form preparation, filing, and acknowledgment receipt"
+        category:
+          type: string
+          example: "Tax Filing"
+          description: "Service category like Tax, Compliance, Registration etc."
+        defaultBasePrice:
+          type: number
+          format: decimal
+          example: 3000.00
+          description: "Suggested base price - CAs can customize this"
+        priceRange:
+          type: object
+          properties:
+            min:
+              type: number
+              example: 1500
+            max:
+              type: number
+              example: 8000
+            note:
+              type: string
+              example: "Price varies based on income sources and complexity"
+          description: "Suggested price range for the service"
+        estimatedDays:
+          type: integer
+          example: 7
+          description: "Typical completion time in days"
+        requirements:
+          type: array
+          items:
+            type: string
+          example: ["Form 16/16A", "Bank statements", "Investment proofs"]
+          description: "Required documents/information"
+        features:
+          type: array
+          items:
+            type: string
+          example: ["ITR preparation", "Maximum refund calculation", "E-filing"]
+          description: "Service features/deliverables"
+        suggestedAdditionalCharges:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              amount:
+                type: number
+              description:
+                type: string
+          example:
+            expedited_filing:
+              amount: 500
+              description: "Rush processing within 2-3 days"
+          description: "Suggested additional charges with descriptions"
+        complexity:
+          type: string
+          enum: [basic, intermediate, advanced]
+          example: "intermediate"
+          description: "Service complexity level"
+        metadata:
+          type: object
+          additionalProperties: true
+          example:
+            popularService: true
+            avgCompletionTime: "5-7 days"
+          description: "Additional metadata for service template"
+
+    Specialization:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "Income Tax"
+        description:
+          type: string
+
+    AvailabilitySlot:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        startTime:
+          type: string
+          format: time
+        endTime:
+          type: string
+          format: time
+        isAvailable:
+          type: boolean
+        price:
+          type: number
+          nullable: true
+
+    # Consultation Schemas
+    Consultation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        caName:
+          type: string
+        caImage:
+          type: string
+          nullable: true
+        caSpecialization:
+          type: string
+        date:
+          type: string
+          format: date
+        time:
+          type: string
+          format: time
+        type:
+          type: string
+          enum:
+            - video
+            - phone
+            - chat
+          example: video
+        purpose:
+          type: string
+        status:
+          type: string
+          enum:
+            - pending
+            - accepted
+            - rejected
+            - in_progress
+            - completed
+            - cancelled
+            - escalated
+        paymentStatus:
+          type: string
+          enum:
+            - unpaid
+            - pending
+            - paid
+            - refunded
+        durationMinutes:
+          type: integer
+          example: 30
+        price:
+          type: number
+        currency:
+          type: string
+          example: "INR"
+        notes:
+          type: string
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Completion percentage
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ConsultationDetails:
+      allOf:
+        - $ref: '#/components/schemas/Consultation'
+        - type: object
+          properties:
+            meetingLink:
+              type: string
+              nullable: true
+            itrNumber:
+              type: string
+              nullable: true
+            acknowledgmentNumber:
+              type: string
+              nullable: true
+
+    BookingRequest:
+      type: object
+      required:
+        - ca_id
+        - date
+        - time
+        - purpose
+      properties:
+        ca_id:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+          example: "2024-03-25"
+        time:
+          type: string
+          format: time
+          example: "10:00"
+        purpose:
+          type: string
+          example: "ITR filing consultation"
+        additional_notes:
+          type: string
+          example: "Please call before meeting"
+
+    ConsultationRequest:
+      type: object
+      required:
+        - date
+        - time
+        - purpose
+      properties:
+        date:
+          type: string
+          format: date
+        time:
+          type: string
+          format: time
+        purpose:
+          type: string
+        additionalNotes:
+          type: string
+
+    Filing:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        year:
+          type: string
+          example: "AY 2024-25"
+        status:
+          type: string
+        ca:
+          type: string
+        caLocation:
+          type: string
+        filedDate:
+          type: string
+          format: date-time
+        refundAmount:
+          type: string
+          example: "₹15,000"
+        serviceType:
+          type: string
+
+    # Message Schemas
+    Message:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        sender:
+          type: string
+          enum:
+            - user
+            - ca
+            - system
+        senderName:
+          type: string
+        senderAvatar:
+          type: string
+        message:
+          type: string
+        timestamp:
+          type: string
+        hasAttachment:
+          type: boolean
+        attachmentUrl:
+          type: string
+          nullable: true
+        attachmentType:
+          type: string
+          nullable: true
+
+    # Document Schemas
+    Document:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        size:
+          type: string
+          example: "245 KB"
+        uploadedAt:
+          type: string
+        type:
+          type: string
+          enum:
+            - form16
+            - bank_statement
+            - pan_card
+            - aadhar_card
+            - itr_form
+            - itr_v
+            - other
+        status:
+          type: string
+          enum:
+            - uploaded
+            - verified
+            - rejected
+            - processing
+        uploader:
+          type: string
+          enum: 
+            - user
+            - ca
+        uploaderName:
+          type: string
+        mimeType:
+          type: string
+        downloadCount:
+          type: integer
+
+    # Payment Schemas
+    Payment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        amount:
+          type: number
+        currency:
+          type: string
+          example: "INR"
+        status:
+          type: string
+          enum:
+            - pending
+            - success
+            - failed
+            - cancelled
+            - refunded
+        type:
+          type: string
+          enum:
+            - booking_fee
+            - service_fee
+            - consultation_fee
+        paymentMethod:
+          type: string
+        transactionId:
+          type: string
+        serviceRequestId:
+          type: string
+          format: uuid
+        caName:
+          type: string
+        purpose:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PaymentInitiateRequest:
+      type: object
+      required:
+        - amount
+        - serviceRequestId
+        - paymentType
+      properties:
+        amount:
+          type: number
+          example: 999
+        serviceRequestId:
+          type: string
+          format: uuid
+        paymentType:
+          type: string
+          enum:
+            - booking_fee
+            - service_fee
+            - consultation_fee
+        currency:
+          type: string
+          default: "INR"
+        description:
+          type: string
+
+    PaymentInitiateResponse:
+      type: object
+      properties:
+        paymentId:
+          type: string
+          format: uuid
+        paymentUrl:
+          type: string
+          description: Payment gateway URL
+        orderId:
+          type: string
+          description: Payment gateway order ID
+        amount:
+          type: number
+        currency:
+          type: string
+
+    PaymentStatus:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+        amount:
+          type: number
+        currency:
+          type: string
+        transactionId:
+          type: string
+          nullable: true
+        failureReason:
+          type: string
+          nullable: true
+        paidAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    # Review Schema
+    Review:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        avatar:
+          type: string
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+        date:
+          type: string
+        comment:
+          type: string
+        helpful:
+          type: integer
+          default: 0
+
+    # Notification Schema
+    Notification:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        message:
+          type: string
+        type:
+          type: string
+          enum:
+            - info
+            - success
+            - warning
+            - error
+        isRead:
+          type: boolean
+          default: false
+        serviceRequestId:
+          type: string
+          format: uuid
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        readAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    # WebSocket Schemas
+    WebSocketMessage:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "msg_123e4567-e89b-12d3-a456-426614174000"
+        sender:
+          type: string
+          enum: 
+            - user
+            - ca
+            - system
+          example: "user"
+        senderName:
+          type: string
+          example: "Amit Kumar"
+        senderAvatar:
+          type: string
+          example: "https://lh3.googleusercontent.com/..."
+        message:
+          type: string
+          example: "Hello, I have a question about my tax filing"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2024-03-15T10:30:00Z"
+        hasAttachment:
+          type: boolean
+          example: false
+        attachmentUrl:
+          type: string
+          nullable: true
+          example: "https://s3.amazonaws.com/bucket/document.pdf"
+        attachmentType:
+          type: string
+          nullable: true
+          enum: 
+            - image
+            - document
+            - file
+          example: "document"
+        serviceRequestId:
+          type: string
+          format: uuid
+          example: "123e4567-e89b-12d3-a456-426614174000"
+
+    WebSocketNotification:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: "notif_123e4567-e89b-12d3-a456-426614174000"
+        title:
+          type: string
+          example: "New Consultation Request"
+        message:
+          type: string
+          example: "Amit Kumar has requested a consultation"
+        notificationType:
+          type: string
+          enum: 
+            - consultation_requested
+            - consultation_accepted
+            - consultation_rejected
+            - consultation_cancelled
+            - consultation_completed
+            - payment_successful
+            - payment_failed
+            - payment_refunded
+            - document_uploaded
+            - document_verified
+            - document_rejected
+            - message_received
+            - meeting_scheduled
+            - meeting_reminder
+            - meeting_cancelled
+            - deadline_reminder
+            - escalation_notice
+            - review_request
+            - system_announcement
+          example: "consultation_requested"
+        priority:
+          type: string
+          enum: 
+            - low
+            - medium
+            - high
+            - urgent
+          example: "high"
+        actionUrl:
+          type: string
+          nullable: true
+          example: "/ca/consultations/123e4567-e89b-12d3-a456-426614174000"
+        actionText:
+          type: string
+          nullable: true
+          example: "View Request"
+        serviceRequestId:
+          type: string
+          format: uuid
+          nullable: true
+          example: "123e4567-e89b-12d3-a456-426614174000"
+        isRead:
+          type: boolean
+          example: false
+        createdAt:
+          type: string
+          format: date-time
+          example: "2024-03-15T10:30:00Z"
+
+    WebSocketConnectionInfo:
+      type: object
+      properties:
+        endpoint:
+          type: string
+          example: "ws://localhost:3000"
+          description: "WebSocket connection endpoint"
+        authentication:
+          type: object
+          properties:
+            method:
+              type: string
+              example: "JWT"
+            headerName:
+              type: string
+              example: "authorization"
+            tokenPrefix:
+              type: string
+              example: "Bearer "
+        events:
+          type: object
+          properties:
+            outgoing:
+              type: array
+              items:
+                type: string
+              example: ["join_service_request", "send_message", "leave_service_request"]
+            incoming:
+              type: array
+              items:
+                type: string
+              example: ["message_received", "notification", "user_joined", "user_left", "typing_start", "typing_stop"]
+        rooms:
+          type: object
+          properties:
+            personal:
+              type: string
+              example: "user_{userId} or ca_{caId}"
+              description: "Personal notification room (auto-joined)"
+            consultation:
+              type: string
+              example: "consultation_{serviceRequestId}"
+              description: "Consultation chat room (manually joined)"
+
+    WebSocketTestConnection:
+      type: object
+      description: |
+        **WebSocket Testing Guide**
+        
+        Use this information to test WebSocket connections:
+        
+        **1. Browser Testing:**
+        ```javascript
+        // Include Socket.IO client library
+        <script src="/socket.io/socket.io.js"></script>
+        
+        // Connect with authentication
+        const socket = io('ws://localhost:3000', {
+          auth: {
+            token: 'your-jwt-token-here'
+          }
+        });
+        
+        // Listen for connection
+        socket.on('connect', () => {
+          console.log('Connected to WebSocket');
+        });
+        
+        // Join consultation room
+        socket.emit('join_service_request', {
+          serviceRequestId: 'your-consultation-id'
+        });
+        
+        // Send message
+        socket.emit('send_message', {
+          serviceRequestId: 'your-consultation-id',
+          message: 'Hello from WebSocket test!'
+        });
+        
+        // Listen for messages
+        socket.on('message_received', (data) => {
+          console.log('New message:', data);
+        });
+        
+        // Listen for notifications
+        socket.on('notification', (data) => {
+          console.log('New notification:', data);
+        });
+        ```
+        
+        **2. Postman/Insomnia Testing:**
+        - Use WebSocket request type
+        - Set URL to `ws://localhost:3000`
+        - Add authorization header with JWT token
+        
+        **3. Node.js Testing:**
+        ```javascript
+        const io = require('socket.io-client');
+        
+        const socket = io('ws://localhost:3000', {
+          auth: {
+            token: 'your-jwt-token'
+          }
+        });
+        
+        socket.on('connect', () => {
+          console.log('Connected');
+          // Test events here
+        });
+        ```
+      properties:
+        testUrl:
+          type: string
+          example: "ws://localhost:3000"
+        authToken:
+          type: string
+          example: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        sampleEvents:
+          type: object
+            example:
+              join_room: |
+                socket.emit('join_service_request', {serviceRequestId: 'uuid'})
+              send_message: |
+                socket.emit('send_message', {serviceRequestId: 'uuid', message: 'test'})
+              listen_messages: |
+                socket.on('message_received', (data) => console.log(data))
+              listen_notifications: |
+                socket.on('notification', (data) => console.log(data))
+
+    # Video Call Schemas
+    ScheduleMeetingRequest:
+      type: object
+      required:
+        - serviceRequestId
+        - scheduledDateTime
+        - duration
+      properties:
+        serviceRequestId:
+          type: string
+          format: uuid
+        scheduledDateTime:
+          type: string
+          format: date-time
+        duration:
+          type: integer
+          description: Duration in minutes
+          example: 30
+        agenda:
+          type: string
+        meetingType:
+          type: string
+          enum:
+            - google_meet
+            - zoom
+            - teams
+          default: google_meet
+
+    Meeting:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        serviceRequestId:
+          type: string
+          format: uuid
+        meetingUrl:
+          type: string
+        meetingId:
+          type: string
+        password:
+          type: string
+          nullable: true
+        scheduledDateTime:
+          type: string
+          format: date-time
+        duration:
+          type: integer
+        agenda:
+          type: string
+        status:
+          type: string
+          enum:
+            - scheduled
+            - started
+            - completed
+            - cancelled
+        attendees:
+          type: array
+          items:
+            type: object
+            properties:
+              userId:
+                type: string
+                format: uuid
+              userType:
+                type: string
+                enum: 
+                  - user
+                  - ca
+              name:
+                type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    MeetingStatus:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+            - scheduled
+            - started
+            - completed
+            - cancelled
+        meetingUrl:
+          type: string
+        scheduledDateTime:
+          type: string
+          format: date-time
+        actualStartTime:
+          type: string
+          format: date-time
+          nullable: true
+        actualEndTime:
+          type: string
+          format: date-time
+          nullable: true
+        duration:
+          type: integer
+        participants:
+          type: array
+          items:
+            type: object
+            properties:
+              userId:
+                type: string
+              name:
+                type: string
+              joinedAt:
+                type: string
+                format: date-time
+              leftAt:
+                type: string
+                format: date-time
+                nullable: true
+
+    # Utility Schemas
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 10
+        total:
+          type: integer
+          example: 100
+        totalPages:
+          type: integer
+          example: 10
+
+    Error:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: "VALIDATION_ERROR"
+            message:
+              type: string
+              example: "Required field is missing"
+        message:
+          type: string
+          example: "An error occurred"
+
+    # Admin Schemas
+    Admin:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: "System Administrator"
+        email:
+          type: string
+          format: email
+          example: "admin@easetax.com"
+        role:
+          type: string
+          enum: [super_admin, admin, moderator]
+          example: super_admin
+        status:
+          type: string
+          enum: [active, inactive, suspended]
+          example: active
+        permissions:
+          type: object
+          properties:
+            canManageCAs:
+              type: boolean
+            canManageUsers:
+              type: boolean
+            canViewAnalytics:
+              type: boolean
+            canManageSystem:
+              type: boolean
+            canManageAdmins:
+              type: boolean
+        lastLogin:
+          type: string
+          format: date-time
+          nullable: true
+
+    ServiceRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        caId:
+          type: string
+          format: uuid
+          nullable: true
+        serviceType:
+          type: string
+          enum: [itr_filing, gst_registration, company_registration, trademark, other]
+        purpose:
+          type: string
+        status:
+          type: string
+          enum: [pending, accepted, rejected, in_progress, completed, cancelled, escalated]
+        priority:
+          type: string
+          enum: [low, medium, high, urgent]
+          default: medium
+        estimatedAmount:
+          type: number
+          nullable: true
+        finalAmount:
+          type: number
+          nullable: true
+        scheduledDate:
+          type: string
+          format: date
+          nullable: true
+        scheduledTime:
+          type: string
+          format: time
+          nullable: true
+        deadline:
+          type: string
+          format: date
+          nullable: true
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+          default: 0
+        notes:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        user:
+          $ref: '#/components/schemas/User'
+        ca:
+          $ref: '#/components/schemas/CA'
+
+    AdminDashboard:
+      type: object
+      properties:
+        users:
+          type: object
+          properties:
+            total:
+              type: integer
+            growth:
+              type: number
+        cas:
+          type: object
+          properties:
+            total:
+              type: integer
+            verified:
+              type: integer
+            pending:
+              type: integer
+            verificationRate:
+              type: string
+              example: "85.2"
+        requests:
+          type: object
+          properties:
+            total:
+              type: integer
+            active:
+              type: integer
+            completionRate:
+              type: string
+              example: "92.5"
+        revenue:
+          type: object
+          properties:
+            total:
+              type: number
+            monthly:
+              type: number
+            currency:
+              type: string
+              example: "INR"
+        quality:
+          type: object
+          properties:
+            averageRating:
+              type: string
+              example: "4.6"
+            totalReviews:
+              type: integer
+
+    RevenueAnalytics:
+      type: object
+      properties:
+        summary:
+          type: object
+          properties:
+            totalRevenue:
+              type: number
+            bookingFees:
+              type: number
+            serviceFees:
+              type: number
+            refunds:
+              type: number
+            netRevenue:
+              type: number
+        dailyRevenue:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date
+              revenue:
+                type: number
+
+    SystemConfig:
+      type: object
+      properties:
+        payments:
+          type: object
+          properties:
+            bookingFee:
+              type: number
+              example: 999
+            commissionRate:
+              type: number
+              example: 8
+            currency:
+              type: string
+              example: "INR"
+        limits:
+          type: object
+          properties:
+            maxFileSize:
+              type: string
+              example: "10MB"
+            maxDocuments:
+              type: integer
+              example: 10
+            maxReschedules:
+              type: integer
+              example: 2
+        features:
+          type: object
+          properties:
+            autoVerifyCA:
+              type: boolean
+            enableEscalation:
+              type: boolean
+            enableNotifications:
+              type: boolean
+        integrations:
+          type: object
+          properties:
+            razorpay:
+              type: boolean
+            zoom:
+              type: boolean
+            googleMeet:
+              type: boolean
+
+    SystemConfigUpdate:
+      type: object
+      properties:
+        payments.bookingFee:
+          type: number
+        payments.commissionRate:
+          type: number
+        limits.maxFileSize:
+          type: string
+        limits.maxDocuments:
+          type: integer
+        limits.maxReschedules:
+          type: integer
+        features.autoVerifyCA:
+          type: boolean
+        features.enableEscalation:
+          type: boolean
+        features.enableNotifications:
+          type: boolean
+
+tags:
+  - name: Authentication
+    description: User, CA, and Admin authentication endpoints
+  - name: User Management
+    description: User profile and data management
+  - name: CA Management
+    description: CA search, profiles, and availability
+  - name: CA Management (CA Access)
+    description: CA-specific endpoints for managing service requests
+  - name: Admin Management
+    description: Admin-only endpoints for system management
+  - name: Consultation Management
+    description: Consultation booking and management
+  - name: Document Management
+    description: Document upload and management
+  - name: Payment Management
+    description: Payment processing and history
+  - name: Notification Management
+    description: User notifications
+  - name: WebSocket Events
+    description: Real-time communication via WebSocket (Socket.IO)
+  - name: Video Call Management
+    description: Video call scheduling and management
