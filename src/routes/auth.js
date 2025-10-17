@@ -87,11 +87,6 @@ router.post(
 );
 
 // Get admin profile
-router.get(
-  "/admin/profile",
-  authenticateToken,
-  requireAdmin,
-  adminAuthController.getAdminProfile
-);
+router.get("/profile", authenticateToken, authController.getProfileByIdToken);
 
 module.exports = router;

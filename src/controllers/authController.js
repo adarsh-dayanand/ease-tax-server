@@ -1,5 +1,5 @@
 const firebaseConfig = require("../config/firebase");
-const { User } = require("../../models");
+const { User, CA, Admin } = require("../../models");
 const logger = require("../config/logger");
 
 exports.googleLoginOrRegister = async (req, res) => {
@@ -142,6 +142,77 @@ exports.googleLoginOrRegister = async (req, res) => {
         message: "Invalid Firebase token",
         details:
           process.env.NODE_ENV === "development" ? err.message : undefined,
+      },
+    });
+  }
+};
+
+exports.getProfileByIdToken = async (req, res) => {
+  try {
+    const email = req.user.email;
+    const userType = req.user.type;
+
+    let userRecord;
+
+    switch (userType) {
+      case "ca":
+        userRecord = await CA.findOne({ where: { email } });
+        break;
+      case "user":
+        userRecord = await User.findOne({ where: { email } });
+        break;
+      case "admin":
+        userRecord = await Admin.findOne({ where: { email } });
+        break;
+      default:
+        return res.status(404).json({
+          success: false,
+          error: {
+            code: "USER_NOT_FOUND",
+            message: "User not found",
+          },
+        });
+    }
+    // Find user
+    if (!userRecord) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: "USER_NOT_FOUND",
+          message: "User not found",
+        },
+      });
+    }
+
+    // Return user profile
+    const userProfile = {
+      id: userRecord?.id,
+      email: userRecord?.email,
+      name: userRecord?.name,
+      phone: userRecord?.phone,
+      profileImage: userRecord?.profileImage,
+      pan: userRecord?.pan,
+      gstin: userRecord?.gstin,
+      phoneVerified: userRecord?.phoneVerified,
+      lastLogin: userRecord?.lastLogin,
+    };
+
+    return res.json({
+      success: true,
+      data: {
+        user: userProfile,
+      },
+    });
+  } catch (err) {
+    logger.error("Failed to get user profile", {
+      error: err.message,
+      stack: err.stack,
+    });
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Failed to get user profile",
       },
     });
   }
