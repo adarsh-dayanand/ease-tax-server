@@ -298,7 +298,7 @@ class ConsultationService {
             id: message.id,
             sender: message.senderId === consultation.userId ? "user" : "ca",
             senderName: message.sender?.name,
-            senderAvatar: message.sender?.profileImage,
+            senderProfileImage: message.sender?.profileImage,
             message: message.content,
             timestamp: this.formatTimestamp(message.createdAt),
             hasAttachment: !!message.attachmentUrl,

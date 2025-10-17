@@ -86,9 +86,7 @@ class CAService {
           location: ca.location || "India",
           price: `₹${ca.basePrice ? ca.basePrice.toLocaleString("en-IN") : "2,500"}`,
           currency: ca.currency || "INR",
-          image:
-            ca.image ||
-            `https://ui-avatars.com/api/?name=${encodeURIComponent(ca.name)}&background=random`,
+          profileImage: ca.profileImage,
           verified: ca.verified || false,
           completedFilings: ca.completedFilings || 0,
           phone: ca.phone,
@@ -239,11 +237,9 @@ class CAService {
           reviews:
             reviews?.map((review) => ({
               id: review.id,
-              name: review.user?.name || "Anonymous",
-              avatar:
-                review.user?.profileImage ||
-                `https://ui-avatars.com/api/?name=${encodeURIComponent(review.user?.name || "A")}&background=random`,
-              rating: review.rating,
+              name: review.user?.name,
+              profileImage: review?.user?.profileImage,
+              rating: review?.rating,
               date: this.formatDate(review.createdAt),
               comment: review.review,
             })) || [],
@@ -280,23 +276,21 @@ class CAService {
           include: [
             {
               model: User,
-              as: "reviewer",
-              attributes: ["id", "name", "avatar"],
+              as: "user",
+              attributes: ["id", "name", "profileImage"],
             },
           ],
         });
 
         reviews = {
-          data: rows.map((review) => ({
+          data: rows?.map((review) => ({
             id: review.id,
-            name: review.reviewer?.name || "Anonymous",
-            avatar:
-              review.reviewer?.avatar ||
-              `https://ui-avatars.com/api/?name=${encodeURIComponent(review.reviewer?.name || "A")}&background=random`,
-            rating: review.rating,
+            name: review?.user?.name || "Anonymous",
+            profileImage: review?.user?.profileImage,
+            rating: review?.rating,
             date: this.formatDate(review.createdAt),
-            comment: review.comment,
-            helpful: review.helpful || 0,
+            comment: review?.comment,
+            helpful: review?.helpful || 0,
           })),
           pagination: {
             page,
@@ -350,7 +344,7 @@ class CAService {
           attributes: [
             "id",
             "name",
-            "avatar",
+            "profileImage",
             "location",
             "experienceYears",
             "averageRating",
@@ -373,9 +367,7 @@ class CAService {
           reviewCount: ca.totalReviews || 0,
           location: ca.location || "India",
           price: `₹${ca.basePrice || 2500}`,
-          image:
-            ca.avatar ||
-            `https://ui-avatars.com/api/?name=${encodeURIComponent(ca.name)}&background=random`,
+          image: ca.profileImage,
           verified: ca.isVerified || false,
           completedFilings: ca.completedConsultations || 0,
         }));

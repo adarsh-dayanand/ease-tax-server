@@ -42,7 +42,7 @@ class UserService {
           id: userProfile.id,
           name: userProfile.name,
           email: userProfile.email,
-          avatar: userProfile.profileImage, // actual field name is profileImage
+          profileImage: userProfile.profileImage, // actual field name is profileImage
           phone: userProfile.phone,
           role: "user", // Users are always 'user' role
           pan: userProfile.pan,

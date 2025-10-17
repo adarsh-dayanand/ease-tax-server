@@ -783,44 +783,6 @@ paths:
                   pagination:
                     $ref: '#/components/schemas/Pagination'
 
-  /ca/{caId}/consultation-slots:
-    get:
-      summary: Get CA Availability Slots
-      description: Get available consultation slots for a CA
-      tags:
-        - CA Management
-      parameters:
-        - name: caId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-        - name: startDate
-          in: query
-          schema:
-            type: string
-            format: date
-        - name: endDate
-          in: query
-          schema:
-            type: string
-            format: date
-      responses:
-        '200':
-          description: Availability slots retrieved successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/AvailabilitySlot'
-
   /ca/{caId}/request:
     post:
       summary: Request Consultation
@@ -2780,7 +2742,7 @@ components:
         - $ref: '#/components/schemas/User'
         - type: object
           properties:
-            avatar:
+            profileImage:
               type: string
               description: Profile image URL
             role:
@@ -3776,7 +3738,7 @@ components:
           type: integer
         name:
           type: string
-        avatar:
+        profileImage:
           type: string
         rating:
           type: integer

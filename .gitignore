@@ -18,3 +18,8 @@ logs/
 out/
 .build/
 package-lock.json
+
+# Ignore UI avatars cache
+ui-avatars-cache/
+
+requirements/types/
