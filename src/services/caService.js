@@ -126,10 +126,6 @@ class CAService {
 
       let caProfile = await cacheService.get(cacheKey);
 
-      console.log("====================================");
-      console.log(caProfile);
-      console.log("====================================");
-
       if (!caProfile) {
         const ca = await CA.findOne({
           where: { id: caId },
