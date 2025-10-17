@@ -208,25 +208,21 @@ class CAService {
                 attributes: [
                   "customPrice",
                   "customDuration",
-                  "isActive",
                   "experienceLevel",
                   "notes",
                 ],
                 where: { isActive: true },
               },
-              attributes: [
-                "id",
-                "name",
-                "description",
-                "category",
-                "basePrice",
-                "currency",
-                "duration",
-                "requirements",
-                "deliverables",
-              ],
-              required: false,
+              attributes: ["id", "name", "description", "category"],
             },
+          ],
+          attributes: [
+            "location",
+            "profileImage",
+            "bio",
+            "qualifications",
+            "languages",
+            "experienceYears",
           ],
         });
 
@@ -266,22 +262,16 @@ class CAService {
           specialization: ca?.specializations
             ?.map((s) => s.specialization)
             .join(", "),
-          experience: ca?.experienceYears
-            ? `${ca.experienceYears} years`
-            : `${ca.completedFilings || 0} completed filings`,
-          rating: ca?.rating || 0.0,
+          experience: ca?.experienceYears,
+          rating: ca?.rating,
           reviewCount: ca?.reviewCount || reviews?.length,
           location: ca?.location,
-          price: `₹${ca?.basePrice}`,
-          currency: ca?.currency,
-          image: ca?.image,
-          verified: ca?.verified || false,
-          completedFilings: ca?.completedFilings || 0,
+          profileImage: ca?.profileImage,
+          verified: ca?.status === "active",
+          completedFilings: ca?.completedFilings,
           bio: ca?.bio,
           qualifications: ca?.qualifications,
           languages: ca?.languages,
-          successRate: ca?.successRate,
-          clientRetention: ca?.clientRetention,
           services:
             ca.services?.map((service) => ({
               id: service.id,
@@ -297,9 +287,6 @@ class CAService {
               deliverables: service.deliverables || [],
               notes: service.caService?.notes,
             })) || [],
-          specialties: ca?.specializations?.map((s) => s.specialization) || [
-            "Income Tax",
-          ],
           reviews:
             reviews?.map((review) => ({
               id: review.id,

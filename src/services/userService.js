@@ -57,8 +57,6 @@ class UserService {
               filedDate: sr.completedAt || sr.updatedAt,
               refundAmount: sr.finalAmount ? `₹${sr.finalAmount}` : "TBD",
             })) || [],
-          loading: false,
-          error: null,
         };
 
         // Cache for 30 minutes
@@ -118,7 +116,7 @@ class UserService {
             {
               model: require("../../models").CA,
               as: "ca",
-              attributes: ["id", "name", "image", "location"],
+              attributes: ["id", "name", "profileImage", "location"],
             },
           ],
         });
@@ -127,7 +125,7 @@ class UserService {
           data: rows.map((sr) => ({
             id: sr.id,
             caName: sr.ca?.name || "Pending CA Assignment",
-            caImage: sr.ca?.image,
+            caImage: sr.ca?.profileImage,
             caSpecialization: "Tax Consultant", // Default since specialization is in separate table
             date: sr.scheduledDate,
             time: sr.scheduledTime,
