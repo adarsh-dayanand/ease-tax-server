@@ -265,6 +265,45 @@ class AdminController {
   }
 
   /**
+   * Update CA commission percentage
+   * PUT /admin/cas/:caId/commission
+   */
+  async updateCACommission(req, res) {
+    try {
+      const { caId } = req.params;
+      const { commissionPercentage } = req.body;
+
+      if (
+        !commissionPercentage ||
+        commissionPercentage < 0 ||
+        commissionPercentage > 100
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Commission percentage must be between 0 and 100",
+        });
+      }
+
+      const ca = await adminService.updateCACommission(
+        caId,
+        commissionPercentage
+      );
+
+      res.json({
+        success: true,
+        data: ca,
+        message: "CA commission updated successfully",
+      });
+    } catch (error) {
+      logger.error("Error in updateCACommission:", error);
+      res.status(400).json({
+        success: false,
+        message: error.message || "Failed to update CA commission",
+      });
+    }
+  }
+
+  /**
    * Get all users
    * GET /admin/users
    */

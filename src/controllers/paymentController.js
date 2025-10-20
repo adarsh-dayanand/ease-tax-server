@@ -9,7 +9,7 @@ class PaymentController {
   async initiatePayment(req, res) {
     try {
       const userId = req.user.id;
-      const { serviceRequestId, paymentType } = req.body;
+      const { serviceRequestId, paymentType, couponCode } = req.body;
 
       if (!serviceRequestId || !paymentType) {
         return res.status(400).json({
@@ -23,12 +23,14 @@ class PaymentController {
       if (paymentType === "booking") {
         paymentData = await paymentService.initiateBookingPayment(
           userId,
-          serviceRequestId
+          serviceRequestId,
+          couponCode
         );
       } else if (paymentType === "final") {
         paymentData = await paymentService.initiateFinalPayment(
           userId,
-          serviceRequestId
+          serviceRequestId,
+          couponCode
         );
       } else {
         return res.status(400).json({

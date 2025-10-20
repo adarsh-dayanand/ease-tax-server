@@ -303,6 +303,33 @@ class AdminService {
   }
 
   /**
+   * Update CA commission percentage
+   */
+  async updateCACommission(caId, commissionPercentage) {
+    try {
+      const ca = await CA.findByPk(caId);
+
+      if (!ca) {
+        throw new Error("CA not found");
+      }
+
+      await ca.update({
+        commissionPercentage: parseFloat(commissionPercentage),
+      });
+
+      return {
+        id: ca.id,
+        name: ca.name,
+        email: ca.email,
+        commissionPercentage: ca.commissionPercentage,
+      };
+    } catch (error) {
+      logger.error("Error updating CA commission:", error);
+      throw error;
+    }
+  }
+
+  /**
    * Get all users with filters
    */
   async getAllUsers(status = null, page = 1, limit = 20) {

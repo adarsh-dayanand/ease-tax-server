@@ -341,7 +341,9 @@ paths:
                     properties:
                       admin:
                         $ref: '#/components/schemas/Admin'
+                      user:
                         $ref: '#/components/schemas/User'
+                      ca:
                         $ref: '#/components/schemas/CA'
         '404':
           $ref: '#/components/responses/NotFound'
@@ -1490,11 +1492,63 @@ paths:
                 - suspensionReason
               properties:
                 suspensionReason:
-                  type: string
-      responses:
+                responses:
         '200':
           description: CA suspended successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/CA'
 
+  /admin/cas/{caId}/commission:
+    put:
+      summary: Update CA Commission Percentage
+      description: Admin updates the commission percentage for a CA. This affects the deduction from CA's payments.
+      tags:
+        - Admin Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: caId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - commissionPercentage
+              properties:
+                commissionPercentage:
+                  type: number
+                  format: float
+                  minimum: 0
+                  maximum: 100
+                  description: Commission percentage to deduct from CA's payments.
+      responses:
+        '200':
+          description: Commission percentage updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/CA'
+                type: string
+    
   /admin/cas/{caId}/activate:
     post:
       summary: Activate CA Account
@@ -2674,6 +2728,176 @@ paths:
                     type: boolean
                   data:
                     $ref: '#/components/schemas/MeetingStatus'
+
+  /coupons:
+    post:
+      summary: Validate Coupon
+      description: Validate and preview coupon discount for a specific amount
+      tags:
+        - Coupons
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, amount]
+              properties:
+                code:
+                  type: string
+                amount:
+                  type: number
+                serviceType:
+                  type: string
+            examples:
+              Example:
+                value:
+                  code: "WELCOME10"
+                  amount: 2500
+    get:
+      summary: Get Active Coupons for User
+      description: List active coupons available for authenticated user
+      tags:
+        - Coupons
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Active coupons retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Coupon'
+
+  /coupons/history:
+    get:
+      summary: Get User Coupon Usage History
+      description: Get coupon usage history for the authenticated user
+      tags:
+        - Coupons
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Coupon usage history retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CouponUsage'
+
+  /coupons/admin:
+    post:
+      summary: Create Coupon (Admin)
+      description: Create a new coupon (admin only)
+      tags:
+        - Coupons
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Coupon'
+      responses:
+        '201':
+          description: Coupon created successfully
+    get:
+      summary: Get All Coupons (Admin)
+      description: List all coupons (admin only)
+      tags:
+        - Coupons
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Coupons retrieved successfully
+  /coupons/admin/{couponId}:
+    put:
+      summary: Update Coupon (Admin)
+      description: Update coupon details (admin only)
+      tags:
+        - Coupons
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: couponId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Coupon'
+      responses:
+        '200':
+          description: Coupon updated successfully
+    delete:
+      summary: Deactivate Coupon (Admin)
+      description: Deactivate a coupon so it cannot be used
+      tags:
+        - Coupons
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: couponId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Coupon deactivated successfully
+  /coupons/admin/{couponId}/usage:
+    get:
+      summary: Get Coupon Usage History (Admin)
+      description: Get paginated coupon usage for a coupon
+      tags:
+        - Coupons
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: couponId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Coupon usage history retrieved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CouponUsage'
 
 components:
   securitySchemes:

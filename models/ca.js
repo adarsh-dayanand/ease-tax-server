@@ -80,6 +80,16 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true,
       defaultValue: 1,
     },
+    commissionPercentage: {
+      type: DataTypes.DECIMAL(5, 2),
+      allowNull: false,
+      defaultValue: 8.0,
+      validate: {
+        min: 0,
+        max: 100,
+      },
+      comment: "Commission percentage taken by platform from CA's earnings",
+    },
   });
 
   CA.associate = (models) => {

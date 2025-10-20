@@ -54,6 +54,12 @@ router.put(
   adminController.activateCA
 );
 
+router.put(
+  "/cas/:caId/commission",
+  rateLimit.apiRateLimit,
+  adminController.updateCACommission
+);
+
 // User Management
 router.get("/users", rateLimit.apiRateLimit, adminController.getAllUsers);
 

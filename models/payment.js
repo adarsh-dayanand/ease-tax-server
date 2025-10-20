@@ -17,6 +17,24 @@ module.exports = (sequelize, DataTypes) => {
           key: "id",
         },
       },
+      couponId: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        references: {
+          model: "Coupons",
+          key: "id",
+        },
+      },
+      discountAmount: {
+        type: DataTypes.DECIMAL(10, 2),
+        defaultValue: 0.0,
+        comment: "Discount amount from coupon",
+      },
+      originalAmount: {
+        type: DataTypes.DECIMAL(10, 2),
+        allowNull: true,
+        comment: "Original amount before discount",
+      },
       payerId: {
         type: DataTypes.UUID,
         allowNull: false, // Usually user, but can be system for refunds
@@ -173,15 +191,24 @@ module.exports = (sequelize, DataTypes) => {
       foreignKey: "payeeId",
       as: "payee",
     });
+
+    Payment.belongsTo(models.Coupon, {
+      foreignKey: "couponId",
+      as: "coupon",
+    });
+
+    Payment.hasOne(models.CouponUsage, {
+      foreignKey: "paymentId",
+      as: "couponUsage",
+    });
   };
 
   // Instance methods
   Payment.prototype.calculateCommission = function () {
     if (this.paymentType === "service_fee") {
-      this.commissionAmount = (
-        (this.amount * this.commissionPercentage) /
-        100
-      ).toFixed(2);
+      // Use the commission percentage stored in payment (from CA's commission rate)
+      const commissionRate = this.commissionPercentage || 8.0;
+      this.commissionAmount = ((this.amount * commissionRate) / 100).toFixed(2);
       this.netAmount = (this.amount - this.commissionAmount).toFixed(2);
     }
     return this;

@@ -1,6 +1,7 @@
 const { Payment, ServiceRequest, User, CA } = require("../../models");
 const { Op } = require("sequelize");
 const cacheService = require("./cacheService");
+const couponService = require("./couponService");
 const logger = require("../config/logger");
 const crypto = require("crypto");
 
@@ -22,7 +23,7 @@ class PaymentService {
   /**
    * Initiate payment for consultation booking - ONLY after CA acceptance
    */
-  async initiateBookingPayment(userId, serviceRequestId) {
+  async initiateBookingPayment(userId, serviceRequestId, couponCode = null) {
     try {
       const serviceRequest = await ServiceRequest.findByPk(serviceRequestId, {
         include: [
@@ -34,7 +35,7 @@ class PaymentService {
           {
             model: CA,
             as: "ca",
-            attributes: ["id", "name"],
+            attributes: ["id", "name", "commissionPercentage"],
           },
         ],
       });
@@ -69,19 +70,51 @@ class PaymentService {
         return await this.getPaymentStatus(existingPayment.id);
       }
 
+      let amount = this.bookingFee;
+      let discountAmount = 0;
+      let couponId = null;
+      let originalAmount = amount;
+
+      // Apply coupon if provided
+      if (couponCode) {
+        const couponResult = await couponService.validateAndApplyCoupon(
+          couponCode,
+          userId,
+          amount,
+          serviceRequest.serviceType
+        );
+
+        if (couponResult.valid) {
+          originalAmount = amount;
+          discountAmount = couponResult.discountAmount;
+          amount = couponResult.finalAmount;
+          couponId = couponResult.couponId;
+        }
+      }
+
+      // Get CA's commission percentage (use CA-specific or default)
+      const commissionPercentage =
+        serviceRequest.ca?.commissionPercentage ||
+        this.platformCommission * 100;
+
       // Create payment record
       const payment = await Payment.create({
         payerId: userId,
         payeeId: serviceRequest.caId,
         serviceRequestId,
-        amount: this.bookingFee,
+        amount,
+        originalAmount,
+        discountAmount,
+        couponId,
         currency: "INR",
         paymentType: "booking_fee",
         status: "pending",
         paymentGateway: this.mockMode ? null : "razorpay",
+        commissionPercentage,
         metadata: {
           serviceRequestId,
           description: `Booking fee for consultation with ${serviceRequest.ca?.name}`,
+          couponApplied: !!couponCode,
         },
       });
 
@@ -105,6 +138,8 @@ class PaymentService {
         paymentId: payment.id,
         orderId: paymentGatewayResponse.id,
         amount: payment.amount,
+        originalAmount: payment.originalAmount,
+        discountAmount: payment.discountAmount,
         currency: payment.currency,
         keyId: this.razorpayKeyId,
         prefill: {
@@ -126,7 +161,7 @@ class PaymentService {
   /**
    * Initiate final payment after service completion
    */
-  async initiateFinalPayment(userId, serviceRequestId) {
+  async initiateFinalPayment(userId, serviceRequestId, couponCode = null) {
     try {
       const serviceRequest = await ServiceRequest.findByPk(serviceRequestId, {
         include: [
@@ -138,7 +173,7 @@ class PaymentService {
           {
             model: CA,
             as: "ca",
-            attributes: ["id", "name"],
+            attributes: ["id", "name", "commissionPercentage"],
           },
         ],
       });
@@ -172,11 +207,37 @@ class PaymentService {
       // Calculate final amount (total - booking fee already paid)
       const totalAmount =
         serviceRequest.finalAmount || serviceRequest.estimatedAmount || 2500;
-      const finalAmount = totalAmount - this.bookingFee;
+      let finalAmount = totalAmount - this.bookingFee;
 
       if (finalAmount <= 0) {
         throw new Error("No additional payment required");
       }
+
+      let discountAmount = 0;
+      let couponId = null;
+      let originalAmount = finalAmount;
+
+      // Apply coupon if provided
+      if (couponCode) {
+        const couponResult = await couponService.validateAndApplyCoupon(
+          couponCode,
+          userId,
+          finalAmount,
+          serviceRequest.serviceType
+        );
+
+        if (couponResult.valid) {
+          originalAmount = finalAmount;
+          discountAmount = couponResult.discountAmount;
+          finalAmount = couponResult.finalAmount;
+          couponId = couponResult.couponId;
+        }
+      }
+
+      // Get CA's commission percentage
+      const commissionPercentage =
+        serviceRequest.ca?.commissionPercentage ||
+        this.platformCommission * 100;
 
       // Create payment record
       const payment = await Payment.create({
@@ -184,18 +245,27 @@ class PaymentService {
         payeeId: serviceRequest.caId,
         serviceRequestId,
         amount: finalAmount,
+        originalAmount,
+        discountAmount,
+        couponId,
         currency: "INR",
         paymentType: "service_fee",
         status: "pending",
         paymentGateway: this.mockMode ? null : "razorpay",
         isEscrow: true, // Service fees go to escrow until completion
+        commissionPercentage,
         metadata: {
           serviceRequestId,
           description: `Service fee for consultation with ${serviceRequest.ca?.name}`,
           totalAmount,
           bookingFee: this.bookingFee,
+          couponApplied: !!couponCode,
         },
       });
+
+      // Calculate commission
+      payment.calculateCommission();
+      await payment.save();
 
       let paymentGatewayResponse;
 
@@ -214,6 +284,10 @@ class PaymentService {
         paymentId: payment.id,
         orderId: paymentGatewayResponse.id,
         amount: payment.amount,
+        originalAmount: payment.originalAmount,
+        discountAmount: payment.discountAmount,
+        commissionAmount: payment.commissionAmount,
+        netAmount: payment.netAmount,
         currency: payment.currency,
         keyId: this.razorpayKeyId,
         prefill: {
@@ -536,6 +610,19 @@ class PaymentService {
       if (payment.paymentType === "service_fee") {
         payment.calculateCommission();
         await payment.save();
+      }
+
+      // Record coupon usage if coupon was applied
+      if (payment.couponId) {
+        await couponService.recordCouponUsage(
+          payment.couponId,
+          payment.payerId,
+          payment.serviceRequestId,
+          payment.id,
+          payment.originalAmount,
+          payment.discountAmount,
+          payment.amount
+        );
       }
 
       await this.clearPaymentCache(payment.id);
