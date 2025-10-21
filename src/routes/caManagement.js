@@ -47,12 +47,6 @@ router.post(
   caManagementController.rejectRequest
 );
 
-router.post(
-  "/requests/:requestId/accept-with-changes",
-  rateLimit.apiRateLimit,
-  caManagementController.acceptWithChanges
-);
-
 // Service request status management
 router.put(
   "/requests/:requestId/status",
@@ -64,6 +58,13 @@ router.post(
   "/requests/:requestId/complete",
   rateLimit.apiRateLimit,
   caManagementController.markRequestComplete
+);
+
+// Update estimated amount for a service request
+router.patch(
+  "/requests/:requestId/estimated-amount",
+  rateLimit.apiRateLimit,
+  caManagementController.updateEstimatedAmount
 );
 
 // Profile management

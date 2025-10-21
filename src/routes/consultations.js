@@ -24,11 +24,6 @@ router.get(
   rateLimit.apiRateLimit,
   consultationController.getConsultationDetails
 );
-router.put(
-  "/:consultationId/reschedule",
-  rateLimit.apiRateLimit,
-  consultationController.rescheduleConsultation
-);
 router.post(
   "/:consultationId/cancel",
   rateLimit.apiRateLimit,

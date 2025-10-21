@@ -14,6 +14,29 @@ const { Op } = require("sequelize");
 
 class CAManagementService {
   /**
+   * Update estimated amount for a service request (CA only)
+   */
+  async updateEstimatedAmount(requestId, caId, estimatedAmount) {
+    try {
+      const request = await ServiceRequest.findOne({
+        where: { id: requestId, caId },
+      });
+      if (!request) {
+        throw new Error("Service request not found or access denied");
+      }
+      await request.update({ estimatedAmount });
+      await this.clearCACache(caId);
+      return {
+        id: request.id,
+        estimatedAmount: request.estimatedAmount,
+        status: request.status,
+      };
+    } catch (error) {
+      logger.error("Error updating estimated amount:", error);
+      throw error;
+    }
+  }
+  /**
    * Get CA dashboard data
    */
   async getCADashboard(caId) {
@@ -274,7 +297,8 @@ class CAManagementService {
    */
   async acceptRequest(requestId, caId, acceptanceData) {
     try {
-      const { finalAmount, estimatedCompletionDate, notes } = acceptanceData;
+      const { scheduledDate, scheduledTime, estimatedAmount, notes } =
+        acceptanceData;
 
       const request = await ServiceRequest.findOne({
         where: { id: requestId, status: "pending" },
@@ -291,31 +315,13 @@ class CAManagementService {
         throw new Error("Request not found or already processed");
       }
 
-      // Check if this service type allows only one CA
-      if (["itr_filing", "gst_registration"].includes(request.serviceType)) {
-        // Cancel other pending requests for the same user and service type
-        await ServiceRequest.update(
-          {
-            status: "cancelled",
-            cancellationReason: "Another CA accepted for the same service type",
-          },
-          {
-            where: {
-              userId: request.userId,
-              serviceType: request.serviceType,
-              status: "pending",
-              id: { [Op.ne]: requestId },
-            },
-          }
-        );
-      }
-
       // Update the request
       await request.update({
         caId,
         status: "accepted",
-        finalAmount: finalAmount || request.estimatedAmount,
-        deadline: estimatedCompletionDate,
+        scheduledDate,
+        scheduledTime,
+        estimatedAmount,
         metadata: {
           ...request.metadata,
           acceptedAt: new Date(),
@@ -330,8 +336,9 @@ class CAManagementService {
       return {
         id: request.id,
         status: request.status,
-        finalAmount: request.finalAmount,
-        deadline: request.deadline,
+        scheduledDate: request.scheduledDate,
+        scheduledTime: request.scheduledTime,
+        estimatedAmount: request.estimatedAmount,
         userId: request.userId,
       };
     } catch (error) {
@@ -381,91 +388,6 @@ class CAManagementService {
       };
     } catch (error) {
       logger.error("Error rejecting request:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Accept request with changes
-   */
-  async acceptWithChanges(requestId, caId, changeData) {
-    try {
-      const {
-        newDate,
-        newTime,
-        finalAmount,
-        estimatedCompletionDate,
-        notes,
-        changeReason,
-      } = changeData;
-
-      const request = await ServiceRequest.findOne({
-        where: { id: requestId, status: "pending" },
-        include: [
-          {
-            model: User,
-            as: "user",
-            attributes: ["id", "name", "email"],
-          },
-        ],
-      });
-
-      if (!request) {
-        throw new Error("Request not found or already processed");
-      }
-
-      // Check if this service type allows only one CA
-      if (["itr_filing", "gst_registration"].includes(request.serviceType)) {
-        await ServiceRequest.update(
-          {
-            status: "cancelled",
-            cancellationReason: "Another CA accepted for the same service type",
-          },
-          {
-            where: {
-              userId: request.userId,
-              serviceType: request.serviceType,
-              status: "pending",
-              id: { [Op.ne]: requestId },
-            },
-          }
-        );
-      }
-
-      await request.update({
-        caId,
-        status: "accepted",
-        scheduledDate: newDate,
-        scheduledTime: newTime,
-        finalAmount: finalAmount || request.estimatedAmount,
-        deadline: estimatedCompletionDate,
-        metadata: {
-          ...request.metadata,
-          acceptedAt: new Date(),
-          acceptanceNotes: notes,
-          acceptedBy: caId,
-          changesApplied: {
-            originalDate: request.scheduledDate,
-            originalTime: request.scheduledTime,
-            newDate,
-            newTime,
-            changeReason,
-          },
-        },
-      });
-
-      await this.clearCACache(caId);
-
-      return {
-        id: request.id,
-        status: request.status,
-        newDate,
-        newTime,
-        finalAmount: request.finalAmount,
-        userId: request.userId,
-      };
-    } catch (error) {
-      logger.error("Error accepting request with changes:", error);
       throw error;
     }
   }

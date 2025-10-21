@@ -4,6 +4,39 @@ const logger = require("../config/logger");
 
 class CAManagementController {
   /**
+   * Update estimated amount for a service request (CA only)
+   * PATCH /ca-mgmt/requests/:requestId/estimated-amount
+   */
+  async updateEstimatedAmount(req, res) {
+    try {
+      const { requestId } = req.params;
+      const caId = req.user.id;
+      const { estimatedAmount } = req.body;
+      if (!estimatedAmount) {
+        return res.status(400).json({
+          success: false,
+          message: "estimatedAmount is required",
+        });
+      }
+      const result = await caManagementService.updateEstimatedAmount(
+        requestId,
+        caId,
+        estimatedAmount
+      );
+      res.json({
+        success: true,
+        data: result,
+        message: "Estimated amount updated successfully",
+      });
+    } catch (error) {
+      logger.error("Error in updateEstimatedAmount:", error);
+      res.status(400).json({
+        success: false,
+        message: error.message || "Failed to update estimated amount",
+      });
+    }
+  }
+  /**
    * Get CA dashboard data
    * GET /ca-mgmt/dashboard
    */
@@ -97,11 +130,20 @@ class CAManagementController {
     try {
       const { requestId } = req.params;
       const caId = req.user.id;
-      const { finalAmount, estimatedCompletionDate, notes } = req.body;
+      const { scheduledDate, scheduledTime, estimatedAmount, notes } = req.body;
+
+      if (!scheduledDate || !scheduledTime || !estimatedAmount) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "scheduledDate, scheduledTime, and estimatedAmount are required",
+        });
+      }
 
       const result = await caManagementService.acceptRequest(requestId, caId, {
-        finalAmount,
-        estimatedCompletionDate,
+        scheduledDate,
+        scheduledTime,
+        estimatedAmount,
         notes,
       });
 
@@ -173,78 +215,6 @@ class CAManagementController {
       res.status(400).json({
         success: false,
         message: error.message || "Failed to reject request",
-      });
-    }
-  }
-
-  /**
-   * Accept request with changes (time/date modifications)
-   * POST /ca-mgmt/requests/:requestId/accept-with-changes
-   */
-  async acceptWithChanges(req, res) {
-    try {
-      const { requestId } = req.params;
-      const caId = req.user.id;
-      const {
-        newDate,
-        newTime,
-        finalAmount,
-        estimatedCompletionDate,
-        notes,
-        changeReason,
-      } = req.body;
-
-      if (!newDate || !newTime || !changeReason) {
-        return res.status(400).json({
-          success: false,
-          message: "New date, time, and change reason are required",
-        });
-      }
-
-      const result = await caManagementService.acceptWithChanges(
-        requestId,
-        caId,
-        {
-          newDate,
-          newTime,
-          finalAmount,
-          estimatedCompletionDate,
-          notes,
-          changeReason,
-        }
-      );
-
-      // Send notification to user
-      await notificationService.createNotification(
-        result.userId,
-        "user",
-        "consultation_accepted",
-        "Consultation Accepted with Changes",
-        `CA ${req.user.name} has accepted your request with time changes. New time: ${newDate} at ${newTime}`,
-        {
-          serviceRequestId: requestId,
-          actionUrl: `/consultations/${requestId}`,
-          actionText: "View Details",
-          priority: "high",
-          templateData: {
-            caName: req.user.name,
-            newDate,
-            newTime,
-            changeReason,
-          },
-        }
-      );
-
-      res.json({
-        success: true,
-        data: result,
-        message: "Request accepted with changes",
-      });
-    } catch (error) {
-      logger.error("Error in acceptWithChanges:", error);
-      res.status(400).json({
-        success: false,
-        message: error.message || "Failed to accept request with changes",
       });
     }
   }

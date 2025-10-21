@@ -456,7 +456,7 @@ paths:
 
     post:
       summary: Book New Consultation
-      description: Book a consultation with a CA
+      description: Book a consultation with a CA by selecting a CA Service
       tags:
         - User Management
       parameters:
@@ -472,6 +472,10 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/BookingRequest'
+            example:
+              caServiceId: "b1a2c3d4-5678-1234-9876-abcdef123456"
+              purpose: "ITR filing consultation"
+              additionalNotes: "Please call before meeting"
       responses:
         '201':
           description: Consultation booked successfully
@@ -872,7 +876,7 @@ paths:
   /ca-mgmt/requests/{requestId}/accept:
     post:
       summary: Accept Service Request
-      description: Accept a pending service request
+      description: Accept a pending service request and set schedule/amount
       tags:
         - CA Management (CA Access)
       security:
@@ -885,17 +889,27 @@ paths:
             type: string
             format: uuid
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
+              required:
+                - scheduledDate
+                - scheduledTime
+                - estimatedAmount
               properties:
+                scheduledDate:
+                  type: string
+                  format: date
+                  example: "2025-10-22"
+                scheduledTime:
+                  type: string
+                  format: time
+                  example: "14:30"
                 estimatedAmount:
                   type: number
                   example: 2500
-                estimatedDays:
-                  type: integer
-                  example: 7
                 notes:
                   type: string
       responses:
@@ -978,17 +992,8 @@ paths:
                 status:
                   type: string
                   enum: [in_progress, completed, on_hold]
-                progress:
-                  type: integer
-                  minimum: 0
-                  maximum: 100
                 notes:
                   type: string
-                documents:
-                  type: array
-                  items:
-                    type: string
-                  description: Document URLs for completion
       responses:
         '200':
           description: Status updated successfully
@@ -1907,50 +1912,6 @@ paths:
                     $ref: '#/components/schemas/ConsultationDetails'
         '404':
           $ref: '#/components/responses/NotFound'
-
-  /consultations/{consultationId}/reschedule:
-    put:
-      summary: Reschedule Consultation
-      description: Reschedule an existing consultation
-      tags:
-        - Consultation Management
-      parameters:
-        - name: consultationId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required:
-                - date
-                - time
-              properties:
-                date:
-                  type: string
-                  format: date
-                time:
-                  type: string
-                  format: time
-      responses:
-        '200':
-          description: Consultation rescheduled successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    $ref: '#/components/schemas/ConsultationDetails'
-                  message:
-                    type: string
 
   /consultations/{consultationId}/cancel:
     post:
@@ -3711,26 +3672,16 @@ components:
     BookingRequest:
       type: object
       required:
-        - ca_id
-        - date
-        - time
+        - caServiceId
         - purpose
       properties:
-        ca_id:
+        caServiceId:
           type: string
           format: uuid
-        date:
-          type: string
-          format: date
-          example: "2024-03-25"
-        time:
-          type: string
-          format: time
-          example: "10:00"
         purpose:
           type: string
           example: "ITR filing consultation"
-        additional_notes:
+        additionalNotes:
           type: string
           example: "Please call before meeting"
 
@@ -4466,18 +4417,14 @@ components:
           type: string
           format: uuid
           nullable: true
-        serviceType:
+        caServiceId:
           type: string
-          enum: [itr_filing, gst_registration, company_registration, trademark, other]
+          format: uuid
         purpose:
           type: string
         status:
           type: string
           enum: [pending, accepted, rejected, in_progress, completed, cancelled, escalated]
-        priority:
-          type: string
-          enum: [low, medium, high, urgent]
-          default: medium
         estimatedAmount:
           type: number
           nullable: true
@@ -4491,10 +4438,6 @@ components:
         scheduledTime:
           type: string
           format: time
-          nullable: true
-        deadline:
-          type: string
-          format: date
           nullable: true
         progress:
           type: integer

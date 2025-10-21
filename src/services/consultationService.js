@@ -16,55 +16,34 @@ class ConsultationService {
    */
   async bookConsultation(userId, bookingData) {
     try {
-      const { ca_id, date, time, purpose, additional_notes } = bookingData;
+      const { caServiceId, purpose, additionalNotes } = bookingData;
 
-      // Validate CA exists and is available
-      const ca = await CA.findOne({
-        where: { id: ca_id, verified: true },
-      });
-
-      if (!ca) {
-        throw new Error("CA not found or not available");
+      // Validate CA Service exists
+      const caService =
+        await require("../../models").CAService.findByPk(caServiceId);
+      if (!caService) {
+        throw new Error("CA Service not found");
       }
 
-      // Check if the time slot is available
-      const existingBooking = await ServiceRequest.findOne({
-        where: {
-          caId: ca_id,
-          scheduledDate: date,
-          scheduledTime: time,
-          status: { [Op.notIn]: ["cancelled", "rejected"] },
-        },
-      });
-
-      if (existingBooking) {
-        throw new Error("Time slot is already booked");
-      }
-
-      // Create service request - DO NOT assign CA until they accept
+      // Create service request (pending, no schedule yet)
       const consultation = await ServiceRequest.create({
         userId,
         caId: null, // CA will be assigned only after acceptance
-        scheduledDate: date,
-        scheduledTime: time,
+        caServiceId,
         purpose,
-        additionalNotes: additional_notes,
+        additionalNotes,
         status: "pending",
-        serviceType: "consultation",
-        estimatedAmount: 2500, // Default consultation fee
-        priority: "medium",
         metadata: {
-          requestedCAId: ca_id, // Track which CA was requested
           requestedAt: new Date(),
         },
       });
 
-      // Notify the requested CA about the new request
+      // Notify the CA about the new request
       const notificationService = require("./notificationService");
       await notificationService.notifyConsultationRequested(
-        ca_id,
+        caService.caId,
         consultation.id,
-        { name: "User" } // We'll get user info if needed
+        { name: "User" }
       );
 
       // Clear related caches
@@ -159,59 +138,6 @@ class ConsultationService {
       return consultation;
     } catch (error) {
       logger.error("Error getting consultation details:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Reschedule consultation
-   */
-  async rescheduleConsultation(consultationId, userId, newDate, newTime) {
-    try {
-      const consultation = await ServiceRequest.findByPk(consultationId);
-
-      if (!consultation) {
-        throw new Error("Consultation not found");
-      }
-
-      // Check user access
-      if (consultation.userId !== userId && consultation.caId !== userId) {
-        throw new Error("Access denied");
-      }
-
-      // Check if consultation can be rescheduled
-      if (!["pending", "accepted"].includes(consultation.status)) {
-        throw new Error("Consultation cannot be rescheduled at this stage");
-      }
-
-      // Check if new time slot is available
-      const existingBooking = await ServiceRequest.findOne({
-        where: {
-          caId: consultation.caId,
-          scheduledDate: newDate,
-          scheduledTime: newTime,
-          status: { [Op.notIn]: ["cancelled", "rejected"] },
-          id: { [Op.ne]: consultationId },
-        },
-      });
-
-      if (existingBooking) {
-        throw new Error("New time slot is already booked");
-      }
-
-      // Update consultation
-      await consultation.update({
-        scheduledDate: newDate,
-        scheduledTime: newTime,
-        status: "pending", // Reset to pending for CA to re-confirm
-      });
-
-      // Clear cache
-      await this.clearConsultationCache(consultationId);
-
-      return await this.getConsultationDetails(consultationId);
-    } catch (error) {
-      logger.error("Error rescheduling consultation:", error);
       throw error;
     }
   }

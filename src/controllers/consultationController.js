@@ -12,18 +12,19 @@ class ConsultationController {
       const bookingData = req.body;
 
       // Validate required fields
-      const { ca_id, date, time, purpose } = bookingData;
-      if (!ca_id || !date || !time || !purpose) {
+      const { caServiceId, purpose, additionalNotes } = bookingData;
+      if (!caServiceId || !purpose) {
         return res.status(400).json({
           success: false,
-          message: "CA ID, date, time, and purpose are required",
+          message: "caServiceId and purpose are required",
         });
       }
 
-      const consultation = await consultationService.bookConsultation(
-        userId,
-        bookingData
-      );
+      const consultation = await consultationService.bookConsultation(userId, {
+        caServiceId,
+        purpose,
+        additionalNotes,
+      });
 
       res.status(201).json({
         success: true,
@@ -71,44 +72,6 @@ class ConsultationController {
       res.status(500).json({
         success: false,
         message: "Internal server error",
-      });
-    }
-  }
-
-  /**
-   * Reschedule consultation
-   * PUT /consultations/:consultationId/reschedule
-   */
-  async rescheduleConsultation(req, res) {
-    try {
-      const { consultationId } = req.params;
-      const { date, time } = req.body;
-      const userId = req.user.id;
-
-      if (!date || !time) {
-        return res.status(400).json({
-          success: false,
-          message: "New date and time are required",
-        });
-      }
-
-      const consultation = await consultationService.rescheduleConsultation(
-        consultationId,
-        userId,
-        date,
-        time
-      );
-
-      res.json({
-        success: true,
-        data: consultation,
-        message: "Consultation rescheduled successfully",
-      });
-    } catch (error) {
-      logger.error("Error in rescheduleConsultation:", error);
-      res.status(400).json({
-        success: false,
-        message: error.message || "Failed to reschedule consultation",
       });
     }
   }
