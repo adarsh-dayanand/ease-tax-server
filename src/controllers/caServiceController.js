@@ -275,6 +275,39 @@ class CAServiceController {
       });
     }
   }
-}
 
+  /**
+   * Get master services list for public display
+   * GET /master/services (public endpoint)
+   */
+  async getMasterServices(req, res) {
+    try {
+      // Services are already formatted for public display
+
+      const masterServices = [
+        { key: "tax_filing", value: "ITR Filing" },
+        { key: "gst_registration", value: "GST Registration" },
+        { key: "gst_filing", value: "GST Filing" },
+        { key: "company_registration", value: "Company Registration" },
+        { key: "trademark_registration", value: "Trademark Registration" },
+        { key: "tax_consultation", value: "Tax Consultation" },
+        { key: "audit_services", value: "Audit Services" },
+        { key: "compliance_check", value: "Compliance Check" },
+        { key: "financial_consultation", value: "Financial Consultation" },
+        { key: "other", value: "Other Services" },
+      ];
+
+      res.json({
+        success: true,
+        data: masterServices,
+      });
+    } catch (error) {
+      logger.error("Error in getMasterServices:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to get services",
+      });
+    }
+  }
+}
 module.exports = new CAServiceController();

@@ -114,66 +114,6 @@ class CAController {
   }
 
   /**
-   * CA availability is now handled through consultation requests
-   * Users request consultations and CAs respond with available time slots
-   */
-
-  /**
-   * Request consultation with CA
-   * POST /ca/:caId/request
-   */
-  async requestConsultation(req, res) {
-    try {
-      const { caId } = req.params;
-      const { date, time, purpose, additionalNotes } = req.body;
-      const userId = req.user.id;
-
-      // Validate required fields
-      if (!date || !time || !purpose) {
-        return res.status(400).json({
-          success: false,
-          message: "Date, time, and purpose are required",
-        });
-      }
-
-      // Create service request (this would typically be in a consultation service)
-      const ServiceRequest = require("../../models").ServiceRequest;
-
-      const serviceRequest = await ServiceRequest.create({
-        userId,
-        caId,
-        scheduledDate: date,
-        scheduledTime: time,
-        purpose,
-        notes: additionalNotes,
-        status: "pending",
-        paymentStatus: "unpaid",
-        consultationType: "video",
-        totalAmount: 2500, // This should come from CA's pricing
-        currency: "INR",
-      });
-
-      // Clear related caches
-      await caService.clearCACache(caId);
-
-      res.status(201).json({
-        success: true,
-        data: {
-          id: serviceRequest.id,
-          status: serviceRequest.status,
-          message: "Consultation request submitted successfully",
-        },
-      });
-    } catch (error) {
-      logger.error("Error in requestConsultation:", error);
-      res.status(500).json({
-        success: false,
-        message: "Internal server error",
-      });
-    }
-  }
-
-  /**
    * Get popular CAs
    * GET /ca/popular
    */
@@ -189,32 +129,6 @@ class CAController {
       });
     } catch (error) {
       logger.error("Error in getPopularCAs:", error);
-      res.status(500).json({
-        success: false,
-        message: "Internal server error",
-      });
-    }
-  }
-
-  /**
-   * Get CA specializations
-   * GET /ca/specializations
-   */
-  async getSpecializations(req, res) {
-    try {
-      const CASpecialization = require("../../models").CASpecialization;
-
-      const specializations = await CASpecialization.findAll({
-        attributes: ["id", "specialization", "experience", "fees", "isActive"],
-        order: [["specialization", "ASC"]],
-      });
-
-      res.json({
-        success: true,
-        data: specializations,
-      });
-    } catch (error) {
-      logger.error("Error in getSpecializations:", error);
       res.status(500).json({
         success: false,
         message: "Internal server error",

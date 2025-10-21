@@ -93,10 +93,6 @@ module.exports = (sequelize, DataTypes) => {
   });
 
   CA.associate = (models) => {
-    CA.hasMany(models.CASpecialization, {
-      foreignKey: "caId",
-      as: "specializations",
-    });
     CA.hasMany(models.Review, { foreignKey: "caId", as: "reviews" });
     CA.hasMany(models.CAService, {
       foreignKey: "caId",

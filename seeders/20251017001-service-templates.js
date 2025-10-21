@@ -7,7 +7,7 @@ module.exports = {
       [
         {
           id: "550e8400-e29b-41d4-a716-446655440001",
-          serviceType: "itr_filing",
+          serviceType: "tax_filing",
           serviceName: "Income Tax Return Filing",
           description:
             "Complete ITR filing service including form preparation, filing, and acknowledgment receipt",

@@ -195,11 +195,6 @@ class CAService {
           where: { id: caId },
           include: [
             {
-              model: CASpecialization,
-              as: "specializations",
-              attributes: ["specialization", "experience"],
-            },
-            {
               model: Service,
               as: "services",
               through: {
@@ -217,6 +212,7 @@ class CAService {
             },
           ],
           attributes: [
+            "commissionPercentage",
             "location",
             "profileImage",
             "bio",
@@ -271,6 +267,7 @@ class CAService {
           completedFilings: ca?.completedFilings,
           bio: ca?.bio,
           qualifications: ca?.qualifications,
+          commission: ca?.commissionPercentage,
           languages: ca?.languages,
           services:
             ca.services?.map((service) => ({

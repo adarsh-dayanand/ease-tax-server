@@ -11,7 +11,7 @@ module.exports = {
       },
       serviceType: {
         type: Sequelize.ENUM(
-          "itr_filing",
+          "tax_filing",
           "gst_registration",
           "gst_filing",
           "company_registration",

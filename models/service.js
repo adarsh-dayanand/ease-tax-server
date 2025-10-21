@@ -18,12 +18,15 @@ module.exports = (sequelize, DataTypes) => {
     category: {
       type: DataTypes.ENUM(
         "tax_filing",
-        "tax_planning",
-        "gst",
-        "audit",
-        "consultation",
-        "compliance",
-        "business_setup"
+        "gst_registration",
+        "gst_return_filing",
+        "company_registration",
+        "trademark_registration",
+        "tax_consultation",
+        "audit_services",
+        "compliance_check",
+        "financial_consultation",
+        "other"
       ),
       allowNull: false,
     },

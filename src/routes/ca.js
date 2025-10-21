@@ -8,13 +8,6 @@ const { securityHeaders, sanitizeInput } = require("../middleware/security");
 
 // Public routes (no authentication required)
 router.get(
-  "/specializations",
-  rateLimit.apiRateLimit,
-  securityHeaders,
-  sanitizeInput,
-  caController.getSpecializations
-);
-router.get(
   "/popular",
   rateLimit.apiRateLimit,
   securityHeaders,
@@ -43,13 +36,6 @@ router.get("/", rateLimit.apiRateLimit, caController.searchCAs);
 router.get("/:caId", rateLimit.apiRateLimit, caController.getCAProfile);
 router.get("/:caId/reviews", rateLimit.apiRateLimit, caController.getCAReviews);
 // Availability endpoints removed - CAs handle time slots through consultation requests
-
-// CA consultation request
-router.post(
-  "/:caId/request",
-  rateLimit.apiRateLimit,
-  caController.requestConsultation
-);
 
 // Cache management (admin only)
 router.delete(

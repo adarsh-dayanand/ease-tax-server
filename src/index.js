@@ -47,6 +47,7 @@ const paymentRoutes = require("./routes/payments");
 const notificationRoutes = require("./routes/notifications");
 const vcRoutes = require("./routes/vc");
 const couponRoutes = require("./routes/coupons");
+const masterRoutes = require("./routes/masters");
 
 // Security middleware (applied early)
 app.use(securityHeaders);
@@ -104,6 +105,7 @@ app.use("/api/payments", paymentRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/vc", vcRoutes);
 app.use("/api/coupons", couponRoutes);
+app.use("/api/masters", masterRoutes);
 
 // Health check endpoint
 app.get("/health", (req, res) => {

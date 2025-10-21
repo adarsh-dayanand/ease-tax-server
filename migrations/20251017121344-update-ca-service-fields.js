@@ -46,9 +46,9 @@ module.exports = {
     // Add back the legacy fields
     await queryInterface.addColumn("CAServices", "serviceType", {
       type: Sequelize.ENUM(
-        "itr_filing",
+        "tax_filing",
         "gst_registration",
-        "gst_return_filing",
+        "gst_filing",
         "company_registration",
         "trademark_registration",
         "tax_consultation",

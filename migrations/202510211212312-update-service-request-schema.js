@@ -26,7 +26,7 @@ module.exports = {
     await queryInterface.addColumn("service_requests", "serviceType", {
       type: Sequelize.STRING,
       allowNull: false,
-      defaultValue: "itr_filing",
+      defaultValue: "tax_filing",
     });
     await queryInterface.addColumn("service_requests", "deadline", {
       type: Sequelize.DATE,

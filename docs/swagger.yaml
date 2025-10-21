@@ -701,28 +701,6 @@ paths:
                     items:
                       $ref: '#/components/schemas/CAListItem'
 
-  /ca/specializations:
-    get:
-      summary: Get CA Specializations
-      description: Get list of available CA specializations
-      tags:
-        - CA Management
-      security: []
-      responses:
-        '200':
-          description: Specializations retrieved successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Specialization'
-
   /ca/{caId}:
     get:
       summary: Get CA Profile
@@ -790,46 +768,6 @@ paths:
                       $ref: '#/components/schemas/Review'
                   pagination:
                     $ref: '#/components/schemas/Pagination'
-
-  /ca/{caId}/request:
-    post:
-      summary: Request Consultation
-      description: Send consultation request to a CA
-      tags:
-        - CA Management
-      parameters:
-        - name: caId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ConsultationRequest'
-      responses:
-        '201':
-          description: Consultation request sent successfully
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    type: object
-                    properties:
-                      id:
-                        type: string
-                        format: uuid
-                      status:
-                        type: string
-                      message:
-                        type: string
 
   # CA Management APIs (For CAs)
   /ca-mgmt/requests:
@@ -1021,7 +959,7 @@ paths:
           in: query
           schema:
             type: string
-            enum: [itr_filing, gst_registration, gst_filing, company_registration, tax_planning, audit_services, compliance_check, financial_consultation]
+            enum: [tax_filing, gst_registration, gst_filing, company_registration, tax_planning, audit_services, compliance_check, financial_consultation]
       responses:
         '200':
           description: CA services retrieved successfully
@@ -1215,9 +1153,9 @@ paths:
                   type: array
                   items:
                     type: string
-                    enum: [itr_filing, gst_registration, gst_filing, company_registration, tax_planning, audit_services, compliance_check, financial_consultation]
+                    enum: [tax_filing, gst_registration, gst_filing, company_registration, tax_planning, audit_services, compliance_check, financial_consultation]
                   description: "Optional array of specific service types to initialize. If not provided, basic and intermediate services will be initialized."
-                  example: ["itr_filing", "gst_filing", "tax_planning"]
+                  example: ["tax_filing", "gst_filing", "tax_planning"]
       responses:
         '200':
           description: Default services initialized successfully
@@ -1250,14 +1188,32 @@ paths:
           schema:
             type: string
             format: uuid
-        - name: serviceType
-          in: query
-          schema:
-            type: string
-            enum: [itr_filing, gst_registration, gst_filing, company_registration, tax_planning, audit_services, compliance_check, financial_consultation]
       responses:
         '200':
           description: CA services retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  services:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CAServicePublic'
+
+  # Master Service APIs
+  /masters/services:
+    get:
+      summary: Get Master Services
+      description: Get publicly viewable master services
+      tags:
+        - Master Services
+      security: []
+      responses:
+        '200':
+          description: Master services retrieved successfully
           content:
             application/json:
               schema:
@@ -3196,7 +3152,7 @@ components:
                     example: "Income Tax Return filing for individuals and businesses"
                   category:
                     type: string
-                    enum: ['tax_filing', 'tax_planning', 'gst', 'audit', 'consultation', 'compliance', 'business_setup']
+                    enum: ["tax_filing", "gst_registration", "gst_return_filing", "company_registration", "trademark_registration", "tax_consultation", "audit_services", "compliance_check", "financial_consultation", "other"]
                     example: "tax_filing"
                   price:
                     type: number
@@ -3261,7 +3217,7 @@ components:
           example: "Income Tax Return filing for individuals and businesses"
         category:
           type: string
-          enum: ['tax_filing', 'tax_planning', 'gst', 'audit', 'consultation', 'compliance', 'business_setup']
+          enum: ["tax_filing", "gst_registration", "gst_return_filing", "company_registration", "trademark_registration", "tax_consultation", "audit_services", "compliance_check", "financial_consultation", "other"]
           example: "tax_filing"
         isActive:
           type: boolean
@@ -3322,7 +3278,7 @@ components:
         # Legacy fields for backward compatibility
         serviceType:
           type: string
-          enum: [itr_filing, gst_registration, gst_filing, company_registration, tax_planning, audit_services, compliance_check, financial_consultation]
+          enum: [tax_filing, gst_registration, gst_filing, company_registration, tax_planning, audit_services, compliance_check, financial_consultation]
           nullable: true
         serviceName:
           type: string
@@ -3365,7 +3321,7 @@ components:
           example: "Income Tax Return filing for individuals and businesses"
         category:
           type: string
-          enum: ['tax_filing', 'tax_planning', 'gst', 'audit', 'consultation', 'compliance', 'business_setup']
+          enum: ["tax_filing", "gst_registration", "gst_return_filing", "company_registration", "trademark_registration", "tax_consultation", "audit_services", "compliance_check", "financial_consultation", "other"]
         basePrice:
           type: number
           format: decimal
@@ -3420,7 +3376,7 @@ components:
         # Legacy fields for backward compatibility
         serviceType:
           type: string
-          enum: [itr_filing, gst_registration, gst_filing, company_registration, tax_planning, audit_services, compliance_check, financial_consultation]
+          enum: [tax_filing, gst_registration, gst_filing, company_registration, tax_planning, audit_services, compliance_check, financial_consultation]
           nullable: true
         serviceName:
           type: string
@@ -3459,7 +3415,7 @@ components:
           format: uuid
         serviceType:
           type: string
-          enum: [itr_filing, gst_registration, gst_filing, company_registration, tax_planning, audit_services, compliance_check, financial_consultation]
+          enum: [tax_filing, gst_registration, gst_filing, company_registration, tax_planning, audit_services, compliance_check, financial_consultation]
         serviceName:
           type: string
         description:
@@ -3483,8 +3439,8 @@ components:
       properties:
         serviceType:
           type: string
-          enum: [itr_filing, gst_registration, gst_filing, company_registration, tax_planning, audit_services, compliance_check, financial_consultation]
-          example: "itr_filing"
+          enum: [tax_filing, gst_registration, gst_filing, company_registration, tax_planning, audit_services, compliance_check, financial_consultation]
+          example: "tax_filing"
         serviceName:
           type: string
           example: "Income Tax Return Filing"

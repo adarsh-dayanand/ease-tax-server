@@ -10,7 +10,8 @@ const {
 const cacheService = require("./cacheService");
 const vcSchedulingService = require("./vcSchedulingService");
 const logger = require("../config/logger");
-const { Op } = require("sequelize");
+const { Op, where } = require("sequelize");
+const caService = require("./caService");
 
 class CAManagementService {
   /**
@@ -76,9 +77,9 @@ class CAManagementService {
           CA.findByPk(caId, {
             include: [
               {
-                model: CASpecialization,
-                as: "specializations",
-                attributes: ["specialization", "experience"],
+                model: require("../../models").CAService,
+                as: "caServices",
+                where: { isActive: true },
               },
             ],
           }),

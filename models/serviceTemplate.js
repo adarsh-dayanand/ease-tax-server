@@ -64,7 +64,7 @@ module.exports = (sequelize) => {
       },
       serviceType: {
         type: DataTypes.ENUM(
-          "itr_filing",
+          "tax_filing",
           "gst_registration",
           "gst_filing",
           "company_registration",
@@ -79,7 +79,7 @@ module.exports = (sequelize) => {
           notEmpty: true,
           isIn: [
             [
-              "itr_filing",
+              "tax_filing",
               "gst_registration",
               "gst_filing",
               "company_registration",

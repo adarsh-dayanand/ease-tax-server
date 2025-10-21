@@ -1,12 +1,12 @@
-const cors = require('cors');
-const logger = require('../config/logger');
+const cors = require("cors");
+const logger = require("../config/logger");
 
 /**
  * CORS configuration based on environment
  */
 const getCorsOptions = () => {
-  const isDevelopment = process.env.NODE_ENV === 'development';
-  const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+  const isDevelopment = process.env.NODE_ENV === "development";
+  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
   const websocketOrigin = process.env.WEBSOCKET_CORS_ORIGIN || frontendUrl;
 
   // Development - Allow all origins
@@ -14,19 +14,20 @@ const getCorsOptions = () => {
     return {
       origin: true,
       credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+      methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"],
       allowedHeaders: [
-        'Origin',
-        'X-Requested-With',
-        'Content-Type',
-        'Accept',
-        'Authorization',
-        'Cache-Control',
-        'X-New-Token'
+        "Origin",
+        "X-Requested-With",
+        "Content-Type",
+        "Accept",
+        "Authorization",
+        "Cache-Control",
+        "X-New-Token",
+        "Access-Control-Allow-Origin",
       ],
-      exposedHeaders: ['X-New-Token'],
+      exposedHeaders: ["X-New-Token"],
       optionsSuccessStatus: 200,
-      preflightContinue: false
+      preflightContinue: false,
     };
   }
 
@@ -35,9 +36,9 @@ const getCorsOptions = () => {
     frontendUrl,
     websocketOrigin,
     // Add production domains here
-    'https://easetax.com',
-    'https://www.easetax.com',
-    'https://app.easetax.com'
+    "https://easetax.com",
+    "https://www.easetax.com",
+    "https://app.easetax.com",
   ].filter(Boolean);
 
   return {
@@ -51,23 +52,23 @@ const getCorsOptions = () => {
         callback(null, true);
       } else {
         logger.warn(`CORS blocked origin: ${origin}`);
-        callback(new Error('Not allowed by CORS'));
+        callback(new Error("Not allowed by CORS"));
       }
     },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: [
-      'Origin',
-      'X-Requested-With',
-      'Content-Type',
-      'Accept',
-      'Authorization',
-      'Cache-Control',
-      'X-New-Token'
+      "Origin",
+      "X-Requested-With",
+      "Content-Type",
+      "Accept",
+      "Authorization",
+      "Cache-Control",
+      "X-New-Token",
     ],
-    exposedHeaders: ['X-New-Token'],
+    exposedHeaders: ["X-New-Token"],
     optionsSuccessStatus: 200,
-    preflightContinue: false
+    preflightContinue: false,
   };
 };
 
@@ -81,20 +82,20 @@ const apiCors = cors(getCorsOptions());
  */
 const websocketCors = (origin, callback) => {
   const corsOptions = getCorsOptions();
-  
+
   if (corsOptions.origin === true) {
     // Development mode - allow all
     callback(null, true);
     return;
   }
 
-  if (typeof corsOptions.origin === 'function') {
+  if (typeof corsOptions.origin === "function") {
     corsOptions.origin(origin, callback);
   } else if (Array.isArray(corsOptions.origin)) {
     if (corsOptions.origin.includes(origin)) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      callback(new Error("Not allowed by CORS"));
     }
   } else {
     callback(null, true);
@@ -106,8 +107,8 @@ const websocketCors = (origin, callback) => {
  */
 const uploadCors = cors({
   ...getCorsOptions(),
-  methods: ['POST', 'OPTIONS'],
-  maxAge: 86400 // 24 hours preflight cache
+  methods: ["POST", "OPTIONS"],
+  maxAge: 86400, // 24 hours preflight cache
 });
 
 /**
@@ -116,14 +117,14 @@ const uploadCors = cors({
 const webhookCors = cors({
   origin: [
     // Payment gateway IPs/domains
-    'https://api.razorpay.com',
-    'https://api.phonepe.com',
-    'https://api.cashfree.com',
+    "https://api.razorpay.com",
+    "https://api.phonepe.com",
+    "https://api.cashfree.com",
     // Add other webhook sources
   ],
-  methods: ['POST'],
+  methods: ["POST"],
   credentials: false,
-  optionsSuccessStatus: 200
+  optionsSuccessStatus: 200,
 });
 
 /**
@@ -131,17 +132,17 @@ const webhookCors = cors({
  */
 const dynamicCors = (req, res, next) => {
   const path = req.path.toLowerCase();
-  
+
   // Webhook routes
-  if (path.includes('/webhook')) {
+  if (path.includes("/webhook")) {
     return webhookCors(req, res, next);
   }
-  
+
   // Upload routes
-  if (path.includes('/upload') || path.includes('/document')) {
+  if (path.includes("/upload") || path.includes("/document")) {
     return uploadCors(req, res, next);
   }
-  
+
   // Default API CORS
   return apiCors(req, res, next);
 };
@@ -150,24 +151,24 @@ const dynamicCors = (req, res, next) => {
  * Custom CORS error handler
  */
 const corsErrorHandler = (err, req, res, next) => {
-  if (err.message === 'Not allowed by CORS') {
-    logger.warn('CORS error', {
-      origin: req.get('Origin'),
+  if (err.message === "Not allowed by CORS") {
+    logger.warn("CORS error", {
+      origin: req.get("Origin"),
       method: req.method,
       path: req.path,
       ip: req.ip,
-      userAgent: req.get('User-Agent')
+      userAgent: req.get("User-Agent"),
     });
-    
+
     return res.status(403).json({
       success: false,
       error: {
-        code: 'CORS_NOT_ALLOWED',
-        message: 'Cross-origin request not allowed'
-      }
+        code: "CORS_NOT_ALLOWED",
+        message: "Cross-origin request not allowed",
+      },
     });
   }
-  
+
   next(err);
 };
 
@@ -175,14 +176,23 @@ const corsErrorHandler = (err, req, res, next) => {
  * Pre-flight OPTIONS handler
  */
 const handlePreflightOptions = (req, res, next) => {
-  if (req.method === 'OPTIONS') {
-    // Set additional headers for preflight
-    res.header('Access-Control-Max-Age', '86400'); // 24 hours
-    res.header('Vary', 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers');
-    
-    return res.status(200).end();
+  if (req.method === "OPTIONS") {
+    // Route preflight through the dynamic CORS handler so the configured
+    // cors middleware (apiCors / uploadCors / webhookCors) can set the
+    // appropriate Access-Control-* response headers. After cors runs,
+    // finish the preflight with 200 and a sensible cache TTL.
+    return dynamicCors(req, res, () => {
+      // Set additional headers for preflight responses
+      res.header("Access-Control-Max-Age", "86400"); // 24 hours
+      res.header(
+        "Vary",
+        "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+      );
+
+      return res.status(200).end();
+    });
   }
-  
+
   next();
 };
 
@@ -191,15 +201,18 @@ const handlePreflightOptions = (req, res, next) => {
  */
 const corsSecurityHeaders = (req, res, next) => {
   // Prevent CSRF attacks
-  res.header('X-Content-Type-Options', 'nosniff');
-  res.header('X-Frame-Options', 'DENY');
-  res.header('X-XSS-Protection', '1; mode=block');
-  
+  res.header("X-Content-Type-Options", "nosniff");
+  res.header("X-Frame-Options", "DENY");
+  res.header("X-XSS-Protection", "1; mode=block");
+
   // Only allow HTTPS in production
-  if (process.env.NODE_ENV === 'production') {
-    res.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+  if (process.env.NODE_ENV === "production") {
+    res.header(
+      "Strict-Transport-Security",
+      "max-age=31536000; includeSubDomains; preload"
+    );
   }
-  
+
   next();
 };
 
@@ -212,5 +225,5 @@ module.exports = {
   corsErrorHandler,
   handlePreflightOptions,
   corsSecurityHeaders,
-  getCorsOptions
+  getCorsOptions,
 };
