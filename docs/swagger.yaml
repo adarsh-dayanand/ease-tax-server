@@ -945,6 +945,54 @@ paths:
                   data:
                     $ref: '#/components/schemas/ServiceRequest'
 
+  /ca-mgmt/profile:
+    get:
+      summary: Get CA Profile
+      description: Get authenticated CA's profile information
+      tags:
+        - CA Management (CA Access)
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: CA profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/CAProfile'
+    put:
+      summary: Update CA Profile
+      description: Update authenticated CA's profile information
+      tags:
+        - CA Management (CA Access)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CAProfileUpdateRequest'
+      responses:
+        '200':
+          description: Profile updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/CAProfile'
+                  message:
+                    type: string
+
   # CA Service Management APIs (For CAs)
   /ca-mgmt/services:
     get:
@@ -1333,6 +1381,15 @@ paths:
                   type: string
                 location:
                   type: string
+                caNumber:
+                  type: string
+                  description: Unique CA number identifier
+                  example: "CA2025001"
+                caTypeId:
+                  type: string
+                  format: uuid
+                  description: CA type ID from ca_types table
+                  example: "550e8400-e29b-41d4-a716-446655440000"
                 specializations:
                   type: array
                   items:
@@ -2951,6 +3008,36 @@ components:
         profileImage:
           type: string
 
+    CAProfileUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+        location:
+          type: string
+        bio:
+          type: string
+        qualifications:
+          type: array
+          items:
+            type: string
+        languages:
+          type: array
+          items:
+            type: string
+        basePrice:
+          type: number
+          format: float
+        caNumber:
+          type: string
+          description: Unique CA number identifier
+        caTypeId:
+          type: string
+          format: uuid
+          description: CA type ID from ca_types table
+
     UserDashboard:
       type: object
       properties:
@@ -3070,6 +3157,29 @@ components:
           type: integer
           example: 8
           description: Years of experience
+        caNumber:
+          type: string
+          nullable: true
+          example: "CA2025001"
+          description: Unique CA number identifier
+        caType:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: string
+              format: uuid
+              example: "550e8400-e29b-41d4-a716-446655440000"
+            type:
+              type: string
+              enum: ["ca", "tax-consultant"]
+              example: "ca"
+            name:
+              type: string
+              example: "Chartered Accountant"
+            description:
+              type: string
+              example: "Professional Chartered Accountant"
 
     CAListItem:
       type: object
@@ -3136,6 +3246,29 @@ components:
               type: number
               format: float
               example: 85.0
+            caNumber:
+              type: string
+              nullable: true
+              example: "CA2025001"
+              description: Unique CA number identifier
+            caType:
+              type: object
+              nullable: true
+              properties:
+                id:
+                  type: string
+                  format: uuid
+                  example: "550e8400-e29b-41d4-a716-446655440000"
+                type:
+                  type: string
+                  enum: ["ca", "tax-consultant"]
+                  example: "ca"
+                name:
+                  type: string
+                  example: "Chartered Accountant"
+                description:
+                  type: string
+                  example: "Professional Chartered Accountant"
             services:
               type: array
               items:

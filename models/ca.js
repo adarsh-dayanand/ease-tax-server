@@ -90,6 +90,23 @@ module.exports = (sequelize, DataTypes) => {
       },
       comment: "Commission percentage taken by platform from CA's earnings",
     },
+    caNumber: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      unique: true,
+      field: "ca_number",
+      comment: "Unique CA number identifier",
+    },
+    caTypeId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      field: "ca_type_id",
+      defaultValue: "ca",
+      references: {
+        model: "ca_types",
+        key: "id",
+      },
+    },
   });
 
   CA.associate = (models) => {
@@ -108,6 +125,7 @@ module.exports = (sequelize, DataTypes) => {
       otherKey: "serviceId",
       as: "services",
     });
+    CA.belongsTo(models.CAType, { foreignKey: "caTypeId", as: "caType" });
   };
 
   return CA;

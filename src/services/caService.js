@@ -1,11 +1,11 @@
 const {
   CA,
-  CASpecialization,
   CAService: CAServiceModel,
   Service,
   Review,
   ServiceRequest,
   User,
+  CAType,
   sequelize,
 } = require("../../models");
 const cacheService = require("./cacheService");
@@ -32,12 +32,6 @@ class CAService {
 
         if (filters.location) {
           whereClause.location = { [Op.iLike]: `%${filters.location}%` };
-        }
-
-        if (filters.specialization) {
-          whereClause["$specializations.specialization$"] = {
-            [Op.iLike]: `%${filters.specialization}%`,
-          };
         }
 
         // Add rating filter if provided
@@ -68,12 +62,6 @@ class CAService {
           ],
           include: [
             {
-              model: CASpecialization,
-              as: "specializations",
-              attributes: ["specialization", "experience"],
-              required: false,
-            },
-            {
               model: Review,
               as: "reviews",
               attributes: ["rating"],
@@ -99,7 +87,7 @@ class CAService {
             "qualifications",
             "languages",
           ],
-          group: ["CA.id", "specializations.id", "reviews.id", "caServices.id"],
+          group: ["CA.id", "reviews.id", "caServices.id"],
           subQuery: false,
         });
 
@@ -138,9 +126,7 @@ class CAService {
             return {
               id: ca.id,
               name: ca.name,
-              specialization:
-                ca.specializations?.map((s) => s.specialization).join(", ") ||
-                "Tax Consultant",
+              specialization: ca.qualifications?.join(", ") || "Tax Consultant",
               experience: `${ca.experienceYears || 0} years`,
               rating: Number(averageRating.toFixed(1)) || 0,
               reviewCount: reviews.length,
@@ -187,7 +173,6 @@ class CAService {
   async getCAProfile(caId) {
     try {
       const cacheKey = cacheService.getCacheKeys().CA_PROFILE(caId);
-
       let caProfile = await cacheService.get(cacheKey);
 
       if (!caProfile) {
@@ -210,8 +195,16 @@ class CAService {
               },
               attributes: ["id", "name", "description", "category"],
             },
+            {
+              model: CAType,
+              as: "caType",
+              attributes: ["id", "type", "name", "description"],
+            },
           ],
           attributes: [
+            "id",
+            "name",
+            "status",
             "commissionPercentage",
             "location",
             "profileImage",
@@ -219,6 +212,7 @@ class CAService {
             "qualifications",
             "languages",
             "experienceYears",
+            "caNumber",
           ],
         });
 
@@ -250,25 +244,59 @@ class CAService {
           reviews = [];
         }
 
-        // Availability will be handled through consultation requests
+        // Calculate average rating and total reviews
+        let averageRating = 0;
+        let totalReviews = 0;
+        try {
+          const reviewStats = await Review.findOne({
+            where: { caId },
+            attributes: [
+              [sequelize.fn("COUNT", sequelize.col("id")), "count"],
+              [sequelize.fn("AVG", sequelize.col("rating")), "avgRating"],
+            ],
+          });
+          averageRating = reviewStats?.dataValues?.avgRating || 0;
+          totalReviews = reviewStats?.dataValues?.count || 0;
+        } catch (error) {
+          logger.warn("Error getting review stats:", error.message);
+          averageRating = 0;
+          totalReviews = 0;
+        }
+
+        // Get completed filings count
+        let completedFilings = 0;
+        try {
+          completedFilings = await ServiceRequest.count({
+            where: { caId, status: "completed" },
+          });
+        } catch (error) {
+          logger.warn("Error getting completed filings count:", error.message);
+          completedFilings = 0;
+        }
 
         caProfile = {
           id: ca.id,
-          name: ca.name,
-          specialization: ca?.specializations
-            ?.map((s) => s.specialization)
-            .join(", "),
+          name: ca?.name,
+          specialization: ca?.qualifications?.join(", ") || "Tax Consultant",
           experience: ca?.experienceYears,
-          rating: ca?.rating,
-          reviewCount: ca?.reviewCount || reviews?.length,
+          rating: Number(averageRating.toFixed(1)) || 0,
+          reviewCount: totalReviews,
           location: ca?.location,
           profileImage: ca?.profileImage,
           verified: ca?.status === "active",
-          completedFilings: ca?.completedFilings,
+          completedFilings: completedFilings,
           bio: ca?.bio,
           qualifications: ca?.qualifications,
           commission: ca?.commissionPercentage,
           languages: ca?.languages,
+          caNumber: ca?.caNumber,
+          caType: ca?.caType
+            ? {
+                id: ca.caType.id,
+                name: ca.caType.name,
+                description: ca.caType.description,
+              }
+            : null,
           services:
             ca.services?.map((service) => ({
               id: service.id,
@@ -381,11 +409,6 @@ class CAService {
           where: { status: "active" },
           include: [
             {
-              model: CASpecialization,
-              as: "specializations",
-              attributes: ["specialization", "experience"],
-            },
-            {
               model: Review,
               as: "reviews",
               attributes: ["rating"],
@@ -444,9 +467,7 @@ class CAService {
           return {
             id: ca.id,
             name: ca.name,
-            specialization:
-              ca.specializations?.map((s) => s.specialization).join(", ") ||
-              "Tax Consultant",
+            specialization: ca.qualifications?.join(", ") || "Tax Consultant",
             experience: `${ca.experienceYears || 0} years`,
             rating: Number(averageRating.toFixed(1)) || 0,
             reviewCount: reviews.length,
