@@ -274,6 +274,9 @@ class CAService {
           completedFilings = 0;
         }
 
+        // Get rating distribution
+        const ratingDistribution = await this.getCARatingDistribution(caId);
+
         caProfile = {
           id: ca.id,
           name: ca?.name,
@@ -290,6 +293,7 @@ class CAService {
           commission: ca?.commissionPercentage,
           languages: ca?.languages,
           caNumber: ca?.caNumber,
+          ratingDistribution: ratingDistribution,
           caType: ca?.caType
             ? {
                 id: ca.caType.id,
@@ -504,6 +508,62 @@ class CAService {
   }
 
   /**
+   * Get CA rating distribution (count of each rating from 1-5)
+   */
+  async getCARatingDistribution(caId) {
+    try {
+      const cacheKey = cacheService.getCacheKeys().CA_RATING_DISTRIBUTION(caId);
+      let ratingDistribution = await cacheService.get(cacheKey);
+
+      if (!ratingDistribution) {
+        // Initialize rating distribution with 0 counts for ratings 1-5
+        ratingDistribution = [
+          { rating: 1, count: 0 },
+          { rating: 2, count: 0 },
+          { rating: 3, count: 0 },
+          { rating: 4, count: 0 },
+          { rating: 5, count: 0 },
+        ];
+
+        // Get actual rating counts from database
+        const ratingCounts = await Review.findAll({
+          where: { caId },
+          attributes: [
+            "rating",
+            [sequelize.fn("COUNT", sequelize.col("id")), "count"],
+          ],
+          group: ["rating"],
+          raw: true,
+        });
+
+        // Update the distribution with actual counts
+        ratingCounts.forEach((item) => {
+          const rating = parseInt(item.rating);
+          const count = parseInt(item.count);
+          if (rating > 0 && rating <= 5) {
+            ratingDistribution[rating].count = count;
+          }
+        });
+
+        // Cache for 30 minutes
+        await cacheService.set(cacheKey, ratingDistribution, 1800);
+      }
+
+      return ratingDistribution;
+    } catch (error) {
+      logger.error("Error getting CA rating distribution:", error);
+      // Return default distribution with 0 counts on error
+      return [
+        { rating: 1, count: 0 },
+        { rating: 2, count: 0 },
+        { rating: 3, count: 0 },
+        { rating: 4, count: 0 },
+        { rating: 5, count: 0 },
+      ];
+    }
+  }
+
+  /**
    * Helper methods
    */
 
@@ -529,7 +589,7 @@ class CAService {
       await Promise.all([
         cacheService.del(keys.CA_PROFILE(caId)),
         cacheService.del(keys.CA_REVIEWS(caId)),
-
+        cacheService.del(keys.CA_RATING_DISTRIBUTION(caId)),
         cacheService.delPattern("ca:list:*"),
         cacheService.del(keys.POPULAR_CAS()),
       ]);

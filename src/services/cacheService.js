@@ -245,6 +245,7 @@ class CacheService {
       CA_LIST: (filters) =>
         `ca:list:${Buffer.from(JSON.stringify(filters)).toString("base64")}`,
       CA_REVIEWS: (caId) => `ca:reviews:${caId}`,
+      CA_RATING_DISTRIBUTION: (caId) => `ca:rating_distribution:${caId}`,
 
       // Consultation related
       CONSULTATION: (consultationId) => `consultation:${consultationId}`,
