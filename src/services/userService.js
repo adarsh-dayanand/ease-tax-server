@@ -232,17 +232,29 @@ class UserService {
         const offset = (page - 1) * limit;
 
         const { rows, count } = await Payment.findAndCountAll({
-          where: { userId },
+          where: { payerId: userId },
           limit,
           offset,
           order: [["createdAt", "DESC"]],
+          attributes: [
+            "id",
+            "serviceRequestId",
+            "amount",
+            "currency",
+            "status",
+            "paymentMethod",
+            "transactionReference",
+            "createdAt",
+            "updatedAt",
+          ],
           include: [
             {
               model: ServiceRequest,
               as: "serviceRequest",
+              attributes: ["id", "userId", "caId"],
               include: [
                 {
-                  model: User,
+                  model: require("../../models").CA,
                   as: "ca",
                   attributes: ["id", "name"],
                 },

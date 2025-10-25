@@ -44,7 +44,7 @@ class VCSchedulingService {
             attributes: ["id", "name", "email"],
           },
           {
-            model: User,
+            model: require("../../models").CA,
             as: "ca",
             attributes: ["id", "name", "email"],
           },
@@ -161,7 +161,7 @@ class VCSchedulingService {
             as: "serviceRequest",
             include: [
               { model: User, as: "user" },
-              { model: User, as: "ca" },
+              { model: require("../../models").CA, as: "ca" },
             ],
           },
         ],
