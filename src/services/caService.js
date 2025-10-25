@@ -173,28 +173,13 @@ class CAService {
   async getCAProfile(caId) {
     try {
       const cacheKey = cacheService.getCacheKeys().CA_PROFILE(caId);
+      await cacheService.del(cacheKey);
       let caProfile = await cacheService.get(cacheKey);
 
       if (!caProfile) {
         const ca = await CA.findOne({
           where: { id: caId },
           include: [
-            {
-              model: Service,
-              as: "services",
-              through: {
-                model: CAServiceModel,
-                as: "caService",
-                attributes: [
-                  "customPrice",
-                  "customDuration",
-                  "experienceLevel",
-                  "notes",
-                ],
-                where: { isActive: true },
-              },
-              attributes: ["id", "name", "description", "category"],
-            },
             {
               model: CAType,
               as: "caType",
@@ -218,6 +203,31 @@ class CAService {
 
         if (!ca) {
           return null;
+        }
+
+        // Get CA services separately to handle multiple entries for same service
+        let caServices = [];
+        try {
+          caServices = await CAServiceModel.findAll({
+            where: { caId, isActive: true },
+            include: [
+              {
+                model: Service,
+                as: "service",
+                attributes: [
+                  "id",
+                  "name",
+                  "description",
+                  "category",
+                  "requirements",
+                  "deliverables",
+                ],
+              },
+            ],
+          });
+        } catch (error) {
+          logger.warn("Error getting CA services:", error.message);
+          caServices = [];
         }
 
         // Get reviews separately - handle case where table doesn't exist
@@ -302,19 +312,19 @@ class CAService {
               }
             : null,
           services:
-            ca.services?.map((service) => ({
-              id: service.id,
-              name: service.name,
-              description: service.description,
-              category: service.category,
-              price: service.caService?.customPrice || service.basePrice,
-              duration: service.caService?.customDuration || service.duration,
-              currency: service.currency || ca.currency || "INR",
-              experienceLevel:
-                service.caService?.experienceLevel || "intermediate",
-              requirements: service.requirements || [],
-              deliverables: service.deliverables || [],
-              notes: service.caService?.notes,
+            caServices?.map((caService) => ({
+              id: caService.service.id,
+              caServiceId: caService.id,
+              name: caService.service.name,
+              description: caService.service.description,
+              category: caService.service.category,
+              price: caService.customPrice || null,
+              duration: caService.customDuration || null,
+              currency: caService.currency || "INR",
+              experienceLevel: caService.experienceLevel,
+              requirements: caService.service.requirements || [],
+              deliverables: caService.service.deliverables || [],
+              notes: caService.notes,
             })) || [],
           reviews:
             reviews?.map((review) => ({
