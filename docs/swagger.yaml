@@ -454,18 +454,12 @@ paths:
                   pagination:
                     $ref: '#/components/schemas/Pagination'
 
+  /users/consultations:
     post:
       summary: Book New Consultation
       description: Book a consultation with a CA by selecting a CA Service
       tags:
         - User Management
-      parameters:
-        - name: userId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
       requestBody:
         required: true
         content:

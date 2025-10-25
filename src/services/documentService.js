@@ -272,6 +272,7 @@ class DocumentService {
               status: "completed",
             },
             required: false,
+            attributes: ["id", "amount", "status", "paymentType", "createdAt"],
           },
         ],
       });

@@ -173,7 +173,6 @@ class CAService {
   async getCAProfile(caId) {
     try {
       const cacheKey = cacheService.getCacheKeys().CA_PROFILE(caId);
-      await cacheService.del(cacheKey);
       let caProfile = await cacheService.get(cacheKey);
 
       if (!caProfile) {

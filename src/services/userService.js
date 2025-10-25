@@ -101,7 +101,6 @@ class UserService {
   async getUserConsultations(userId, page = 1, limit = 10) {
     try {
       const cacheKey = cacheService.getCacheKeys().USER_CONSULTATIONS(userId);
-
       let consultations = await cacheService.get(cacheKey);
 
       if (!consultations) {
@@ -118,6 +117,7 @@ class UserService {
               as: "ca",
               attributes: ["id", "name", "profileImage", "location"],
             },
+            { model: require("../../models").CAService, as: "caService" },
           ],
         });
 
@@ -126,7 +126,6 @@ class UserService {
             id: sr.id,
             caName: sr.ca?.name || "Pending CA Assignment",
             caImage: sr.ca?.profileImage,
-            caSpecialization: "Tax Consultant", // Default since specialization is in separate table
             date: sr.scheduledDate,
             time: sr.scheduledTime,
             type: "video", // Default consultation type
@@ -135,7 +134,8 @@ class UserService {
             paymentStatus: this.getPaymentStatus(sr.payments),
             durationMinutes: 30, // Default duration
             price: sr.estimatedAmount || sr.finalAmount,
-            currency: "INR",
+            experienceLevel: sr.caService?.experienceLevel,
+            currency: sr?.caService?.currency || "INR",
             notes: sr.additionalNotes,
             progress: this.calculateProgress(sr.status),
             createdAt: sr.createdAt,

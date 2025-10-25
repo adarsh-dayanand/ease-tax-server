@@ -3,7 +3,7 @@ const {
   User,
   CA,
   Payment,
-  Document,
+  CAService,
   Message,
 } = require("../../models");
 const cacheService = require("./cacheService");
@@ -25,10 +25,25 @@ class ConsultationService {
         throw new Error("CA Service not found");
       }
 
+      // Check for existing consultation for the same user and CA service
+      const existingConsultation = await ServiceRequest.findOne({
+        where: {
+          userId,
+          caServiceId,
+          status: { [Op.in]: ["pending", "accepted", "in_progress"] },
+        },
+      });
+
+      if (existingConsultation) {
+        throw new Error(
+          "You already have an active consultation for this service"
+        );
+      }
+
       // Create service request (pending, no schedule yet)
       const consultation = await ServiceRequest.create({
         userId,
-        caId: null, // CA will be assigned only after acceptance
+        caId: caService.caId, // CA will be assigned only after acceptance
         caServiceId,
         purpose,
         additionalNotes,
@@ -63,7 +78,6 @@ class ConsultationService {
   async getConsultationDetails(consultationId) {
     try {
       const cacheKey = cacheService.getCacheKeys().CONSULTATION(consultationId);
-
       let consultation = await cacheService.get(cacheKey);
 
       if (!consultation) {
@@ -77,25 +91,23 @@ class ConsultationService {
             {
               model: CA,
               as: "ca",
-              attributes: [
-                "id",
-                "name",
-                "image",
-                "location",
-                "completedFilings",
-                "verified",
-              ],
-              include: [
-                {
-                  model: require("../../models").CASpecialization,
-                  as: "specializations",
-                  attributes: ["name"],
-                },
-              ],
+              attributes: ["id", "name", "profileImage", "location"],
             },
+            { model: CAService, as: "caService" },
             {
               model: Payment,
               as: "payments",
+              attributes: [
+                "id",
+                "amount",
+                "currency",
+                "status",
+                "paymentGateway",
+                "paymentMethod",
+                "transactionReference",
+                "createdAt",
+                "updatedAt",
+              ],
             },
           ],
         });
@@ -107,9 +119,7 @@ class ConsultationService {
         consultation = {
           id: serviceRequest.id,
           caName: serviceRequest.ca?.name || "CA Name",
-          caImage: serviceRequest.ca?.image,
-          caSpecialization:
-            serviceRequest.ca?.specializations?.[0]?.name || "Tax Consultant",
+          caImage: serviceRequest.ca?.profileImage,
           date: serviceRequest.scheduledDate,
           time: serviceRequest.scheduledTime,
           type: "video", // Default consultation type
@@ -120,8 +130,9 @@ class ConsultationService {
               ? serviceRequest.payments[0].status
               : "unpaid",
           durationMinutes: 30, // Default duration
+          experienceLevel: serviceRequest.caService?.experienceLevel,
           price: serviceRequest.estimatedAmount || serviceRequest.finalAmount,
-          currency: "INR",
+          currency: serviceRequest?.caService?.currency || "INR",
           notes: serviceRequest.additionalNotes,
           progress: this.calculateProgress(serviceRequest.status),
           createdAt: serviceRequest.createdAt,
@@ -213,7 +224,7 @@ class ConsultationService {
           include: [
             {
               model: User,
-              as: "sender",
+              as: "senderUser",
               attributes: ["id", "name", "profileImage"],
             },
           ],
@@ -223,8 +234,8 @@ class ConsultationService {
           data: rows.map((message) => ({
             id: message.id,
             sender: message.senderId === consultation.userId ? "user" : "ca",
-            senderName: message.sender?.name,
-            senderProfileImage: message.sender?.profileImage,
+            senderName: message.senderUser?.name,
+            senderProfileImage: message.senderUser?.profileImage,
             message: message.content,
             timestamp: this.formatTimestamp(message.createdAt),
             hasAttachment: !!message.attachmentUrl,
