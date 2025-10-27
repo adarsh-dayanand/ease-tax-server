@@ -78,6 +78,7 @@ class ConsultationService {
   async getConsultationDetails(consultationId) {
     try {
       const cacheKey = cacheService.getCacheKeys().CONSULTATION(consultationId);
+      await cacheService.del(cacheKey);
       let consultation = await cacheService.get(cacheKey);
 
       if (!consultation) {

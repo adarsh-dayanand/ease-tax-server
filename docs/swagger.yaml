@@ -842,8 +842,6 @@ paths:
                 estimatedAmount:
                   type: number
                   example: 2500
-                notes:
-                  type: string
       responses:
         '200':
           description: Request accepted successfully
@@ -1212,6 +1210,355 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/CAService'
+                  message:
+                    type: string
+
+  /ca-mgmt/dashboard:
+    get:
+      summary: Get CA Dashboard
+      description: Get comprehensive dashboard data for CA including requests, earnings, and statistics
+      tags:
+        - CA Management
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Dashboard data retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/CADashboard'
+
+  /ca-mgmt/requests/{requestId}:
+    get:
+      summary: Get Request Details
+      description: Get detailed information about a specific service request
+      tags:
+        - CA Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Request details retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/ServiceRequest'
+
+  /ca-mgmt/requests/{requestId}/status:
+    put:
+      summary: Update Request Status
+      description: Update the status of a service request (CA only)
+      tags:
+        - CA Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - status
+              properties:
+                status:
+                  type: string
+                  enum:
+                    - pending
+                    - accepted
+                    - rejected
+                    - in_progress
+                    - completed
+                    - cancelled
+                    - escalated
+      responses:
+        '200':
+          description: Request status updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/ServiceRequest'
+
+  /ca-mgmt/requests/{requestId}/complete:
+    post:
+      summary: Mark Request Complete
+      description: Mark a service request as completed (CA only)
+      tags:
+        - CA Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Request marked as completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
+  /ca-mgmt/requests/{requestId}/estimated-amount:
+    patch:
+      summary: Update Estimated Amount
+      description: Update the estimated amount for a service request (CA only)
+      tags:
+        - CA Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - estimatedAmount
+              properties:
+                estimatedAmount:
+                  type: number
+                  format: float
+                  minimum: 0
+      responses:
+        '200':
+          description: Estimated amount updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/ServiceRequest'
+
+  /ca-mgmt/services/{serviceId}:
+    delete:
+      summary: Delete CA Service
+      description: Delete a CA service offering (CA only)
+      tags:
+        - CA Service Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: serviceId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Service deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
+  /ca-mgmt/services/available:
+    get:
+      summary: Get Available Services
+      description: Get list of services available for CA to offer
+      tags:
+        - CA Service Management
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Available services retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Service'
+
+  /ca-mgmt/requests/{requestId}/schedule-meeting:
+    post:
+      summary: Schedule Meeting
+      description: Schedule a video call meeting for a service request (CA only)
+      tags:
+        - CA Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - scheduledDateTime
+                - duration
+              properties:
+                scheduledDateTime:
+                  type: string
+                  format: date-time
+                duration:
+                  type: integer
+                  minimum: 15
+                  maximum: 120
+                  description: Duration in minutes
+                provider:
+                  type: string
+                  enum: [zoom, googleMeet, teams]
+                  default: zoom
+      responses:
+        '201':
+          description: Meeting scheduled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Meeting'
+
+  /ca-mgmt/meetings/{meetingId}/reschedule:
+    put:
+      summary: Reschedule Meeting
+      description: Reschedule an existing meeting (CA only)
+      tags:
+        - CA Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: meetingId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - newDateTime
+              properties:
+                newDateTime:
+                  type: string
+                  format: date-time
+      responses:
+        '200':
+          description: Meeting rescheduled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Meeting'
+
+  /ca-mgmt/requests/{requestId}/upload-itr-v:
+    post:
+      summary: Upload ITR-V Document
+      description: Upload ITR-V acknowledgment document for a completed service request (CA only)
+      tags:
+        - CA Management
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - document
+              properties:
+                document:
+                  type: string
+                  format: binary
+                  description: ITR-V document file
+      responses:
+        '201':
+          description: ITR-V document uploaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Document'
                   message:
                     type: string
 
@@ -4590,6 +4937,46 @@ components:
               example: "4.6"
             totalReviews:
               type: integer
+
+    CADashboard:
+      type: object
+      properties:
+        profile:
+          $ref: '#/components/schemas/CAProfile'
+        stats:
+          type: object
+          properties:
+            totalRequests:
+              type: integer
+            activeRequests:
+              type: integer
+            completedRequests:
+              type: integer
+            totalEarnings:
+              type: number
+            monthlyEarnings:
+              type: number
+            averageRating:
+              type: number
+            totalReviews:
+              type: integer
+        recentRequests:
+          type: array
+          items:
+            $ref: '#/components/schemas/ServiceRequest'
+        earnings:
+          type: object
+          properties:
+            pending:
+              type: number
+            completed:
+              type: number
+            total:
+              type: number
+        notifications:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
 
     RevenueAnalytics:
       type: object
