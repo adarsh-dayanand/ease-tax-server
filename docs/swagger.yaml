@@ -2,7 +2,39 @@ openapi: 3.0.0
 info:
   title: EaseTax Backend API
   version: 1.0.0
-  description: Complete API documentation for EaseTax platform - connecting users with Chartered Accountants for ITR filing and tax services
+  description: |
+    Complete API documentation for EaseTax platform - connecting users with Chartered Accountants for ITR filing and tax services
+    
+    ## 🏗️ Architecture Overview
+    
+    ### Hybrid Real-Time Communication
+    EaseTax uses a **hybrid approach** combining REST APIs with WebSocket connections for optimal performance:
+    
+    - **REST APIs**: Data retrieval, pagination, authentication, CRUD operations
+    - **WebSocket**: Real-time messaging, notifications, live updates
+    
+    ### Real-Time Features
+    - **Instant Messaging**: Chat between users and CAs during consultations
+    - **Document Sharing**: Real-time document uploads with instant notifications
+    - **Live Status Updates**: Document verification, payment status, consultation progress
+    - **Typing Indicators**: See when others are typing
+    - **Read Receipts**: Know when messages are read
+    - **Online Status**: Track user availability
+    
+    ### WebSocket Connection
+    ```javascript
+    const socket = io('ws://localhost:3000', {
+      auth: { token: 'your-jwt-token' }
+    });
+    
+    // Join consultation room
+    socket.emit('join_service_request', { serviceRequestId: 'uuid' });
+    
+    // Listen for real-time events
+    socket.on('new_message', (message) => { /* handle message */ });
+    socket.on('document_uploaded', (doc) => { /* handle document */ });
+    socket.on('notification', (notif) => { /* handle notification */ });
+    ```
   contact:
     name: EaseTax Support
     email: support@easetax.com
@@ -2355,7 +2387,19 @@ paths:
   /consultations/{consultationId}/messages:
     get:
       summary: Get Consultation Messages
-      description: Get chat messages for a consultation (read-only via REST)
+      description: |
+        Get chat messages for a consultation (read-only via REST)
+        
+        **Hybrid Approach:**
+        - **REST API**: Retrieves message history with pagination
+        - **WebSocket**: Real-time messaging, typing indicators, read receipts
+        - **Document Events**: Document uploads/verifications appear in chat
+        
+        **Real-time Features:**
+        - Instant message delivery via WebSocket
+        - Document sharing notifications in chat
+        - Typing indicators and read receipts
+        - Online status tracking
       tags:
         - Consultation Management
       parameters:
@@ -2395,7 +2439,17 @@ paths:
   /consultations/{consultationId}/documents:
     get:
       summary: Get Consultation Documents
-      description: Get documents uploaded for a consultation
+      description: |
+        Get documents uploaded for a consultation
+        
+        **Real-time Notifications:**
+        - Document uploads trigger instant notifications to other party
+        - Document verification status changes are sent in real-time
+        - Document events appear in consultation chat
+        
+        **WebSocket Events:**
+        - `document_uploaded`: New document shared
+        - `document_verified`: Document approved/rejected
       tags:
         - Consultation Management
       parameters:
@@ -2419,6 +2473,72 @@ paths:
                     type: array
                     items:
                       $ref: '#/components/schemas/Document'
+
+    post:
+      summary: Upload Document to Consultation
+      description: |
+        Upload a document to a specific consultation
+        
+        **Real-time Features:**
+        - Automatically notifies the other party via WebSocket
+        - Document appears instantly in consultation chat
+        - Triggers push notification if user is offline
+        
+        **Supported Formats:**
+        - PDF, DOC, DOCX, JPG, JPEG, PNG
+        - Max file size: 10MB
+      tags:
+        - Consultation Management
+      parameters:
+        - name: consultationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - document
+                - documentType
+              properties:
+                document:
+                  type: string
+                  format: binary
+                  description: Document file to upload
+                documentType:
+                  type: string
+                  enum:
+                    - form16
+                    - bank_statement
+                    - pan_card
+                    - aadhar_card
+                    - itr_form
+                    - itr_v
+                    - other
+                  description: Type/category of the document
+      responses:
+        '201':
+          description: Document uploaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/Document'
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   # Document Management APIs
   /documents/upload:
@@ -2691,19 +2811,23 @@ paths:
                   message:
                     type: string
 
-  # WebSocket Event Handlers (Real-time Communication)
-  /websocket/connect:
-    post:
+  # WebSocket Connection Information
+  /websocket/connection-info:
+    get:
       tags:
         - WebSocket Events
-      summary: Establish WebSocket Connection
+      summary: Get WebSocket Connection Information
       description: |
-        **WebSocket Connection Endpoint**
-        
-        Connect to: `ws://localhost:3000` or `wss://your-domain.com`
-        
+        **WebSocket Connection Guide**
+
+        WebSocket connections are established via the Socket.IO protocol, not REST API calls.
+
+        **Connection Endpoint:**
+        - Development: `ws://localhost:3000`
+        - Production: `wss://your-domain.com`
+
         **Authentication:**
-        Send JWT token in connection handshake:
+        Include JWT token in connection handshake:
         ```javascript
         const socket = io('ws://localhost:3000', {
           auth: {
@@ -2711,44 +2835,23 @@ paths:
           }
         });
         ```
-        
+
         **Connection Events:**
-        - `connect` - Connection established
+        - `connect` - Connection established successfully
         - `disconnect` - Connection closed
-        - `error` - Connection error
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                token:
-                  type: string
-                  description: JWT authentication token
-                  example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        - `connect_error` - Connection failed (check token validity)
+        - `error` - General error occurred
+
+        **Auto-Joined Rooms:**
+        - Personal notification room: `user_{userId}` or `ca_{caId}`
+        - Based on authenticated user type and ID
       responses:
         '200':
-          description: WebSocket connection established
+          description: WebSocket connection information
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: true
-                  message:
-                    type: string
-                    example: "WebSocket connection established"
-                  userId:
-                    type: string
-                    format: uuid
-                  userType:
-                    type: string
-                    enum: 
-                      - user
-                      - ca
+                $ref: '#/components/schemas/WebSocketConnectionInfo'
 
   /websocket/join-consultation:
     post:
@@ -2897,37 +3000,57 @@ paths:
               schema:
                 $ref: '#/components/schemas/WebSocketNotification'
 
-  /websocket/user-status:
+  /websocket/document-events:
     get:
       tags:
         - WebSocket Events
-      summary: User Online Status Events
+      summary: Document Sharing Events
       description: |
-        **Automatic Events:**
+        **Real-time Document Sharing Events**
         
-        Track user online/offline status in consultation rooms
+        **Document Upload Event:**
+        ```javascript
+        socket.emit('document_uploaded', {
+          serviceRequestId: 'consultation-uuid',
+          documentId: 'document-uuid',
+          documentName: 'tax-document.pdf'
+        });
+        ```
+        
+        **Document Verification Event:**
+        ```javascript
+        socket.emit('document_verified', {
+          serviceRequestId: 'consultation-uuid',
+          documentId: 'document-uuid',
+          status: 'verified', // or 'rejected'
+          rejectionReason: 'Document unclear' // optional
+        });
+        ```
         
         **Received Events:**
         ```javascript
-        socket.on('user_joined', (data) => {
-          console.log('User joined:', data.userName);
+        // Document uploaded by other party
+        socket.on('document_uploaded', (data) => {
+          console.log('New document uploaded:', data.documentName);
+          // Refresh document list
+          // Show notification in chat
         });
         
-        socket.on('user_left', (data) => {
-          console.log('User left:', data.userName);
-        });
-        
-        socket.on('typing_start', (data) => {
-          console.log(data.userName + ' is typing...');
-        });
-        
-        socket.on('typing_stop', (data) => {
-          // Hide typing indicator
+        // Document verification status changed
+        socket.on('document_verified', (data) => {
+          console.log('Document status:', data.status);
+          // Update document status in UI
+          // Show verification result
         });
         ```
+        
+        **Integration with REST API:**
+        - Document uploads trigger real-time notifications
+        - Document verification sends instant status updates
+        - All events include consultation context for proper routing
       responses:
         '200':
-          description: User status event structure
+          description: Document event structure
           content:
             application/json:
               schema:
@@ -2936,23 +3059,46 @@ paths:
                   event:
                     type: string
                     enum: 
-                      - user_joined
-                      - user_left
-                      - typing_start
-                      - typing_stop
-                  userId:
+                      - document_uploaded
+                      - document_verified
+                  serviceRequestId:
                     type: string
                     format: uuid
-                  userName:
+                    description: Consultation/Service Request ID
+                  documentId:
                     type: string
-                  userType:
+                    format: uuid
+                    description: Document ID
+                  documentName:
+                    type: string
+                    description: Name of the uploaded document
+                  uploadedBy:
+                    type: string
+                    format: uuid
+                    description: ID of user who uploaded the document
+                  uploadedByName:
+                    type: string
+                    description: Name of user who uploaded the document
+                  status:
                     type: string
                     enum: 
-                      - user
-                      - ca
+                      - verified
+                      - rejected
+                    description: Verification status (for verification events)
+                  rejectionReason:
+                    type: string
+                    description: Reason for rejection (if applicable)
+                  verifiedBy:
+                    type: string
+                    format: uuid
+                    description: ID of CA who verified the document
+                  verifiedByName:
+                    type: string
+                    description: Name of CA who verified the document
                   timestamp:
                     type: string
                     format: date-time
+                    description: When the event occurred
 
   # Video Call APIs
   /vc/schedule:
@@ -3253,7 +3399,6 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
 
-  schemas:
   schemas:
     # Core User Schemas
     User:

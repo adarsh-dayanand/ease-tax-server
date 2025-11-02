@@ -920,15 +920,7 @@ class AdminService {
    */
   async getCADetails(caId) {
     try {
-      const ca = await CA.findByPk(caId, {
-        include: [
-          {
-            model: require("../../models").CASpecialization,
-            as: "specializations",
-            attributes: ["specialization", "experience"],
-          },
-        ],
-      });
+      const ca = await CA.findByPk(caId);
 
       if (!ca) {
         return null;
@@ -945,7 +937,6 @@ class AdminService {
         status: ca.status || "active",
         completedFilings: ca.completedFilings,
         phoneVerified: ca.phoneVerified,
-        specializations: ca.specializations?.map((s) => s.specialization) || [],
         lastLogin: ca.lastLogin,
         createdAt: ca.createdAt,
         metadata: ca.metadata,

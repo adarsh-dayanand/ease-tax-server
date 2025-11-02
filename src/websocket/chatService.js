@@ -114,6 +114,15 @@ class WebSocketService {
       await this.handleMarkMessagesRead(socket, data);
     });
 
+    // Handle document-related events
+    socket.on("document_uploaded", async (data) => {
+      await this.handleDocumentUploaded(socket, data);
+    });
+
+    socket.on("document_verified", async (data) => {
+      await this.handleDocumentVerified(socket, data);
+    });
+
     // Handle disconnection
     socket.on("disconnect", () => {
       this.handleDisconnection(socket);
@@ -381,6 +390,83 @@ class WebSocketService {
       });
     } catch (error) {
       logger.error("Error marking messages as read:", error);
+    }
+  }
+
+  /**
+   * Handle document uploaded event
+   */
+  async handleDocumentUploaded(socket, data) {
+    try {
+      const { serviceRequestId, documentId, documentName } = data;
+
+      // Verify access
+      const serviceRequest = await ServiceRequest.findByPk(serviceRequestId);
+      if (
+        !serviceRequest ||
+        (serviceRequest.userId !== socket.userId &&
+          serviceRequest.caId !== socket.userId)
+      ) {
+        socket.emit("error", { message: "Access denied" });
+        return;
+      }
+
+      // Broadcast document upload to consultation room
+      const roomId = `service_request:${serviceRequestId}`;
+      this.io.to(roomId).emit("document_uploaded", {
+        serviceRequestId,
+        documentId,
+        documentName,
+        uploadedBy: socket.userId,
+        uploadedByName: socket.userName,
+        timestamp: new Date(),
+      });
+
+      logger.info(
+        `Document uploaded notification sent in service request ${serviceRequestId} by ${socket.userId}`
+      );
+    } catch (error) {
+      logger.error("Error handling document uploaded:", error);
+      socket.emit("error", { message: "Failed to handle document upload" });
+    }
+  }
+
+  /**
+   * Handle document verified event
+   */
+  async handleDocumentVerified(socket, data) {
+    try {
+      const { serviceRequestId, documentId, status, rejectionReason } = data;
+
+      // Verify access
+      const serviceRequest = await ServiceRequest.findByPk(serviceRequestId);
+      if (
+        !serviceRequest ||
+        (serviceRequest.userId !== socket.userId &&
+          serviceRequest.caId !== socket.userId)
+      ) {
+        socket.emit("error", { message: "Access denied" });
+        return;
+      }
+
+      // Broadcast document verification to consultation room
+      const roomId = `service_request:${serviceRequestId}`;
+      this.io.to(roomId).emit("document_verified", {
+        serviceRequestId,
+        documentId,
+        status,
+        rejectionReason,
+        verifiedBy: socket.userId,
+        verifiedByName: socket.userName,
+        timestamp: new Date(),
+      });
+
+      logger.info(
+        `Document verification notification sent in service request ${serviceRequestId} by ${socket.userId}`
+      );
+    } catch (error) {
+      logger.error("Error handling document verified:", error);
+      socket.emit("error", { message: "Failed to handle document verification" });
     }
   }
 

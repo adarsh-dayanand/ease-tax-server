@@ -155,6 +155,53 @@ class DocumentService {
   }
 
   /**
+   * Upload document to consultation
+   */
+  async uploadConsultationDocument(consultationId, userId, file, documentType) {
+    try {
+      // Verify user has access to consultation
+      const ServiceRequest = require("../../models").ServiceRequest;
+      const consultation = await ServiceRequest.findByPk(consultationId);
+
+      if (!consultation) {
+        throw new Error("Consultation not found");
+      }
+
+      if (consultation.userId !== userId && consultation.caId !== userId) {
+        throw new Error("Access denied");
+      }
+
+      // Determine uploader type
+      const uploaderType = consultation.userId === userId ? "user" : "ca";
+
+      // Upload the document
+      const document = await this.uploadDocument(
+        file,
+        consultationId,
+        userId,
+        uploaderType,
+        documentType
+      );
+
+      // Send real-time notification to the other party
+      const notificationService = require("./notificationService");
+      const recipientId = consultation.userId === userId ? consultation.caId : consultation.userId;
+      const recipientType = consultation.userId === userId ? "ca" : "user";
+
+      await notificationService.notifyDocumentUploaded(recipientId, recipientType, {
+        id: document.id,
+        name: document.name,
+        serviceRequestId: consultationId,
+      });
+
+      return document;
+    } catch (error) {
+      logger.error("Error uploading consultation document:", error);
+      throw error;
+    }
+  }
+
+  /**
    * Download document from S3 - with payment access control
    */
   async downloadDocument(documentId, userId) {
@@ -431,6 +478,36 @@ class DocumentService {
 
       // Clear cache
       await this.clearDocumentCache(document.serviceRequestId);
+
+      // Send real-time notification about document verification
+      const notificationService = require("./notificationService");
+      const consultation = await ServiceRequest.findByPk(document.serviceRequestId);
+
+      if (consultation) {
+        const notificationType = status === "verified" ? "document_verified" : "document_rejected";
+        const title = status === "verified" ? "Document Verified" : "Document Rejected";
+        const message = status === "verified"
+          ? `Your document "${document.originalName}" has been verified`
+          : `Your document "${document.originalName}" was rejected${rejectionReason ? `: ${rejectionReason}` : ""}`;
+
+        await notificationService.createNotification(
+          consultation.userId,
+          "user",
+          notificationType,
+          title,
+          message,
+          {
+            serviceRequestId: document.serviceRequestId,
+            actionUrl: `/consultations/${document.serviceRequestId}/documents`,
+            actionText: "View Documents",
+            priority: "medium",
+            templateData: {
+              documentName: document.originalName,
+              rejectionReason: rejectionReason
+            },
+          }
+        );
+      }
 
       return await this.getServiceRequestDocuments(document.serviceRequestId);
     } catch (error) {
