@@ -2,6 +2,7 @@ const { Server } = require("socket.io");
 const jwt = require("jsonwebtoken");
 const { Message, ServiceRequest, User, CA } = require("../../models");
 const cacheService = require("../services/cacheService");
+const redisManager = require("../config/redis");
 const logger = require("../config/logger");
 
 class WebSocketService {
@@ -27,35 +28,63 @@ class WebSocketService {
     // Authentication middleware
     this.io.use(async (socket, next) => {
       try {
-        const token =
-          socket.handshake.auth.token ||
-          socket.handshake.headers.authorization?.replace("Bearer ", "");
+        logger.debug("WebSocket auth: starting authentication");
 
         if (!token) {
+          logger.warn("WebSocket auth: no token provided");
           return next(new Error("Authentication token required"));
         }
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        // Basic JWT format check
+        const tokenParts = token.split('.');
+        if (tokenParts.length !== 3) {
+          logger.error("WebSocket auth: invalid token format");
+          return next(new Error("Invalid token format"));
+        }
 
+        logger.debug("WebSocket auth: verifying JWT");
+        const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256', 'HS384', 'HS512'] });
+        logger.debug("WebSocket auth: JWT decoded:", { userId: decoded.userId, userType: decoded.userType, sessionId: decoded.sessionId });
+
+        // Check if session exists in Redis (skip if Redis unavailable)
+        if (redisManager.client && redisManager.client.isReady) {
+          logger.debug("WebSocket auth: checking Redis session");
+          const sessionData = await redisManager.getSession(decoded.sessionId);
+          if (!sessionData) {
+            logger.warn("WebSocket auth: session not found in Redis, but allowing due to valid JWT and user check");
+            // Continue - we'll validate user exists below
+          } else {
+            logger.debug("WebSocket auth: session found");
+          }
+        } else {
+          logger.warn("WebSocket auth: Redis unavailable, allowing with JWT validation only");
+          // Continue without session validation if Redis is down
+        }
+
+        logger.debug("WebSocket auth: fetching user");
         // Get user details
         let user;
-        if (decoded.role === "ca") {
-          user = await CA.findByPk(decoded.id);
+        if (decoded.userType === "ca") {
+          user = await CA.findByPk(decoded.userId);
         } else {
-          user = await User.findByPk(decoded.id);
+          user = await User.findByPk(decoded.userId);
         }
 
         if (!user) {
+          logger.warn("WebSocket auth: user not found");
           return next(new Error("User not found"));
         }
 
-        socket.userId = decoded.id;
-        socket.userType = decoded.role || "user";
+        logger.debug("WebSocket auth: authentication successful");
+        socket.userId = decoded.userId;
+        socket.userType = decoded.userType;
         socket.userName = user.name;
 
         next();
       } catch (error) {
-        logger.error("WebSocket authentication error:", error);
+        logger.error("WebSocket authentication error:", error.message || error);
+        logger.error("WebSocket auth error stack:", error.stack);
+        logger.error("Token received:", token ? token.substring(0, 50) + "..." : "No token");
         next(new Error("Authentication failed"));
       }
     });

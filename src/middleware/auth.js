@@ -104,7 +104,13 @@ const authenticateToken = async (req, res, next) => {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
       // Check if session exists in Redis
-      const sessionData = await redisManager.getSession(decoded.sessionId);
+      let sessionData = null;
+      if (redisManager.client && redisManager.client.isReady) {
+        sessionData = await redisManager.getSession(decoded.sessionId);
+      } else {
+        logger.warn("Redis unavailable for session check, allowing auth with JWT only");
+      }
+
       if (!sessionData) {
         return res.status(401).json({
           success: false,

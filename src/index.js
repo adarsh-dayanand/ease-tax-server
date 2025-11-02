@@ -1,5 +1,6 @@
+// Environment variables are loaded by config/config.js
 require("dotenv").config();
-console.log("✅ Environment loaded");
+console.log("✅ Environment loaded", process.env.NODE_ENV);
 
 const express = require("express");
 const http = require("http");
@@ -34,6 +35,7 @@ const logger = require("./config/logger");
 
 // Import Redis client and connect
 const { connectRedis } = require("./redis");
+const redisManager = require("./config/redis");
 
 // Import routes
 const authRoutes = require("./routes/auth");
@@ -87,6 +89,18 @@ connectRedis()
     // Continue without Redis - caching will be disabled
   });
 
+// Initialize Redis manager for sessions and caching
+redisManager.connect()
+  .then(() => {
+    logger.info("Redis manager connected successfully");
+  })
+  .catch((err) => {
+    logger.warn(
+      "Redis manager connection failed - sessions and caching disabled:",
+      err.message
+    );
+  });
+
 // Initialize WebSocket service
 const io = webSocketService.initialize(server);
 
@@ -109,11 +123,13 @@ app.use("/api/masters", masterRoutes);
 
 // Health check endpoint
 app.get("/health", (req, res) => {
+  const redisStatus = redisManager.isConnected ? "connected" : "disconnected";
   res.json({
     status: "OK",
     timestamp: new Date().toISOString(),
     service: "EaseTax Backend API",
     version: "1.0.0",
+    redis: !!redisStatus,
   });
 });
 

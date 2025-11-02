@@ -13,6 +13,7 @@ class NotificationController {
 
       const notifications = await notificationService.getUserNotifications(
         userId,
+        req.user.type || "user",
         parseInt(page),
         parseInt(limit)
       );
@@ -39,20 +40,40 @@ class NotificationController {
   async markAsRead(req, res) {
     try {
       const userId = req.user.id;
-      const { notificationId } = req.body;
+      const { notificationIds, markAllAsRead, notificationId } = req.body;
 
-      if (!notificationId) {
-        return res.status(400).json({
-          success: false,
-          message: "Notification ID is required",
+      // Handle mark all as read
+      if (markAllAsRead) {
+        await notificationService.markAllAsRead(userId, req.user.type || "user");
+        return res.json({
+          success: true,
+          message: "All notifications marked as read",
         });
       }
 
-      await notificationService.markAsRead(notificationId, userId);
+      // Handle single notification (legacy support)
+      if (notificationId) {
+        await notificationService.markAsRead(notificationId, userId, req.user.type || "user");
+        return res.json({
+          success: true,
+          message: "Notification marked as read",
+        });
+      }
 
-      res.json({
-        success: true,
-        message: "Notification marked as read",
+      // Handle multiple notifications
+      if (notificationIds && Array.isArray(notificationIds) && notificationIds.length > 0) {
+        for (const id of notificationIds) {
+          await notificationService.markAsRead(id, userId, req.user.type || "user");
+        }
+        return res.json({
+          success: true,
+          message: `${notificationIds.length} notification(s) marked as read`,
+        });
+      }
+
+      return res.status(400).json({
+        success: false,
+        message: "Notification ID(s) are required",
       });
     } catch (error) {
       logger.error("Error in markAsRead:", error);
@@ -79,7 +100,7 @@ class NotificationController {
     try {
       const userId = req.user.id;
 
-      await notificationService.markAllAsRead(userId);
+      await notificationService.markAllAsRead(userId, req.user.type || "user");
 
       res.json({
         success: true,
