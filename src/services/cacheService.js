@@ -242,6 +242,7 @@ class CacheService {
 
       // CA related
       CA_PROFILE: (caId) => `ca:profile:${caId}`,
+      CA_DASHBOARD: (caId) => `ca:dashboard:${caId}`,
       CA_LIST: (filters) =>
         `ca:list:${Buffer.from(JSON.stringify(filters)).toString("base64")}`,
       CA_REVIEWS: (caId) => `ca:reviews:${caId}`,

@@ -31,6 +31,39 @@ const format = winston.format.combine(
   )
 );
 
+// Create DailyRotateFile transports with increased max listeners
+const errorTransport = new DailyRotateFile({
+  filename: path.join(__dirname, '../../logs/error-%DATE%.log'),
+  datePattern: 'YYYY-MM-DD',
+  level: 'error',
+  handleExceptions: true,
+  maxSize: process.env.LOG_FILE_MAX_SIZE || '20m',
+  maxFiles: process.env.LOG_FILE_MAX_FILES || '14d',
+  zippedArchive: true, // Compress old log files
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.json()
+  )
+});
+
+// Increase max listeners for the error transport
+errorTransport.setMaxListeners(20);
+
+const combinedTransport = new DailyRotateFile({
+  filename: path.join(__dirname, '../../logs/combined-%DATE%.log'),
+  datePattern: 'YYYY-MM-DD',
+  maxSize: process.env.LOG_FILE_MAX_SIZE || '20m',
+  maxFiles: process.env.LOG_FILE_MAX_FILES || '14d',
+  zippedArchive: true, // Compress old log files
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.json()
+  )
+});
+
+// Increase max listeners for the combined transport
+combinedTransport.setMaxListeners(20);
+
 // Define transports
 const transports = [
   // Console transport
@@ -40,32 +73,12 @@ const transports = [
       winston.format.simple()
     )
   }),
-  
+
   // File transport for errors
-  new DailyRotateFile({
-    filename: path.join(__dirname, '../../logs/error-%DATE%.log'),
-    datePattern: 'YYYY-MM-DD',
-    level: 'error',
-    handleExceptions: true,
-    maxSize: process.env.LOG_FILE_MAX_SIZE || '20m',
-    maxFiles: process.env.LOG_FILE_MAX_FILES || '14d',
-    format: winston.format.combine(
-      winston.format.timestamp(),
-      winston.format.json()
-    )
-  }),
-  
+  errorTransport,
+
   // File transport for all logs
-  new DailyRotateFile({
-    filename: path.join(__dirname, '../../logs/combined-%DATE%.log'),
-    datePattern: 'YYYY-MM-DD',
-    maxSize: process.env.LOG_FILE_MAX_SIZE || '20m',
-    maxFiles: process.env.LOG_FILE_MAX_FILES || '14d',
-    format: winston.format.combine(
-      winston.format.timestamp(),
-      winston.format.json()
-    )
-  })
+  combinedTransport
 ];
 
 // Create logger

@@ -147,6 +147,64 @@ exports.googleLoginOrRegister = async (req, res) => {
   }
 };
 
+exports.refreshFirebaseToken = async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    if (!refreshToken) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: "MISSING_REFRESH_TOKEN",
+          message: "Refresh token is required",
+        },
+      });
+    }
+
+    logger.info("Attempting Firebase token refresh");
+
+    // Refresh the token using Firebase
+    const refreshResult = await firebaseConfig.refreshIdToken(refreshToken);
+
+    if (!refreshResult.success) {
+      logger.error("Firebase token refresh failed", {
+        error: refreshResult.error,
+      });
+
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: "TOKEN_REFRESH_FAILED",
+          message: refreshResult.error || "Failed to refresh token",
+        },
+      });
+    }
+
+    logger.info("Firebase token refreshed successfully");
+
+    return res.json({
+      success: true,
+      data: {
+        idToken: refreshResult.data.idToken,
+        refreshToken: refreshResult.data.refreshToken,
+        expiresIn: refreshResult.data.expiresIn,
+      },
+    });
+  } catch (err) {
+    logger.error("Firebase token refresh error", {
+      error: err.message,
+      stack: err.stack,
+    });
+
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Token refresh failed",
+      },
+    });
+  }
+};
+
 exports.getProfileByIdToken = async (req, res) => {
   try {
     const email = req.user.email;

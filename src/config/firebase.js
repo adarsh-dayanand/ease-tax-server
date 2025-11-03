@@ -18,6 +18,7 @@ class FirebaseConfig {
         "FIREBASE_PROJECT_ID",
         "FIREBASE_PRIVATE_KEY",
         "FIREBASE_CLIENT_EMAIL",
+        "FIREBASE_API_KEY",
       ];
       const missingVars = requiredVars.filter(
         (varName) => !process.env[varName]
@@ -132,19 +133,55 @@ class FirebaseConfig {
     }
   }
 
-  // Create custom token for user
-  async createCustomToken(uid, additionalClaims = {}) {
+  // Refresh Firebase ID token using refresh token
+  async refreshIdToken(refreshToken) {
     try {
-      const customToken = await this.auth.createCustomToken(
-        uid,
-        additionalClaims
+      if (!this.initialized) {
+        const initResult = this.initialize();
+        if (!initResult) {
+          return {
+            success: false,
+            error: "Firebase not configured - missing environment variables",
+          };
+        }
+      }
+
+      // Use Firebase Auth REST API to refresh token
+      const response = await fetch(
+        `https://securetoken.googleapis.com/v1/token?key=${process.env.FIREBASE_API_KEY}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: new URLSearchParams({
+            grant_type: "refresh_token",
+            refresh_token: refreshToken,
+          }),
+        }
       );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        return {
+          success: false,
+          error: errorData.error?.message || "Failed to refresh token",
+          code: errorData.error?.code,
+        };
+      }
+
+      const data = await response.json();
+
       return {
         success: true,
-        token: customToken,
+        data: {
+          idToken: data.id_token,
+          refreshToken: data.refresh_token,
+          expiresIn: data.expires_in,
+        },
       };
     } catch (error) {
-      logger.error("Failed to create custom token:", error);
+      console.error("Firebase token refresh failed:", error);
       return {
         success: false,
         error: error.message,

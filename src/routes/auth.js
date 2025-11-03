@@ -86,6 +86,15 @@ router.post(
   adminAuthController.createSuperAdmin
 );
 
+// Refresh Firebase ID token
+router.post(
+  "/refresh-firebase-token",
+  rateLimit.authRateLimit,
+  securityHeaders,
+  sanitizeInput,
+  authController.refreshFirebaseToken
+);
+
 // Get admin profile
 router.get("/profile", authenticateToken, authController.getProfileByIdToken);
 

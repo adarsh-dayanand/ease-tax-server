@@ -1,5 +1,6 @@
 const { Server } = require("socket.io");
 const jwt = require("jsonwebtoken");
+const firebaseConfig = require("../config/firebase");
 const { Message, ServiceRequest, User, CA } = require("../../models");
 const cacheService = require("../services/cacheService");
 const redisManager = require("../config/redis");
@@ -16,9 +17,28 @@ class WebSocketService {
    * Initialize WebSocket server
    */
   initialize(server) {
+    // Allow multiple origins for development
+    const allowedOrigins = [
+      process.env.FRONTEND_URL,
+      "http://localhost:3000",
+      "http://localhost:5173", // Vite dev server
+      "http://127.0.0.1:5173",
+      "http://localhost:3001", // Alternative dev port
+    ].filter(Boolean); // Remove falsy values
+
     this.io = new Server(server, {
       cors: {
-        origin: process.env.FRONTEND_URL || "http://localhost:3000",
+        origin: function (origin, callback) {
+          // Allow requests with no origin (mobile apps, etc.)
+          if (!origin) return callback(null, true);
+
+          if (allowedOrigins.includes(origin)) {
+            return callback(null, true);
+          }
+
+          logger.warn(`WebSocket CORS: Origin ${origin} not allowed`);
+          return callback(new Error('Not allowed by CORS'));
+        },
         methods: ["GET", "POST"],
         credentials: true,
       },
@@ -30,61 +50,62 @@ class WebSocketService {
       try {
         logger.debug("WebSocket auth: starting authentication");
 
+        const token = socket.handshake.auth?.token;
+
         if (!token) {
           logger.warn("WebSocket auth: no token provided");
           return next(new Error("Authentication token required"));
         }
 
-        // Basic JWT format check
-        const tokenParts = token.split('.');
-        if (tokenParts.length !== 3) {
-          logger.error("WebSocket auth: invalid token format");
-          return next(new Error("Invalid token format"));
+        // Verify Firebase token
+        logger.debug("WebSocket auth: verifying Firebase token");
+        const verificationResult = await firebaseConfig.verifyIdToken(token);
+
+        if (!verificationResult.success) {
+          logger.error("WebSocket auth: Firebase token verification failed", {
+            error: verificationResult.error,
+          });
+          return next(new Error("Invalid authentication token"));
         }
 
-        logger.debug("WebSocket auth: verifying JWT");
-        const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256', 'HS384', 'HS512'] });
-        logger.debug("WebSocket auth: JWT decoded:", { userId: decoded.userId, userType: decoded.userType, sessionId: decoded.sessionId });
+        const decodedToken = verificationResult.data;
+        const { uid, email } = decodedToken;
 
-        // Check if session exists in Redis (skip if Redis unavailable)
-        if (redisManager.client && redisManager.client.isReady) {
-          logger.debug("WebSocket auth: checking Redis session");
-          const sessionData = await redisManager.getSession(decoded.sessionId);
-          if (!sessionData) {
-            logger.warn("WebSocket auth: session not found in Redis, but allowing due to valid JWT and user check");
-            // Continue - we'll validate user exists below
-          } else {
-            logger.debug("WebSocket auth: session found");
+        logger.debug("WebSocket auth: Firebase token verified", {
+          uid,
+          email,
+        });
+
+        // Find user in database
+        let user = await User.findOne({ where: { googleUid: uid } });
+        let userType = "user";
+
+        if (!user) {
+          user = await CA.findOne({ where: { googleUid: uid } });
+          if (user) {
+            userType = "ca";
           }
-        } else {
-          logger.warn("WebSocket auth: Redis unavailable, allowing with JWT validation only");
-          // Continue without session validation if Redis is down
-        }
-
-        logger.debug("WebSocket auth: fetching user");
-        // Get user details
-        let user;
-        if (decoded.userType === "ca") {
-          user = await CA.findByPk(decoded.userId);
-        } else {
-          user = await User.findByPk(decoded.userId);
         }
 
         if (!user) {
-          logger.warn("WebSocket auth: user not found");
+          logger.warn("WebSocket auth: user not found in database", { uid, email });
           return next(new Error("User not found"));
         }
 
-        logger.debug("WebSocket auth: authentication successful");
-        socket.userId = decoded.userId;
-        socket.userType = decoded.userType;
+        logger.debug("WebSocket auth: authentication successful", {
+          userId: user.id,
+          userType,
+          email: user.email,
+        });
+
+        socket.userId = user.id;
+        socket.userType = userType;
         socket.userName = user.name;
 
         next();
       } catch (error) {
         logger.error("WebSocket authentication error:", error.message || error);
         logger.error("WebSocket auth error stack:", error.stack);
-        logger.error("Token received:", token ? token.substring(0, 50) + "..." : "No token");
         next(new Error("Authentication failed"));
       }
     });
@@ -171,6 +192,7 @@ class WebSocketService {
   async handleJoinServiceRequest(socket, data) {
     try {
       const { serviceRequestId } = data;
+      console.log('WebSocket: User joining service request:', socket.userId, serviceRequestId);
 
       // Verify user has access to this service request
       const serviceRequest = await ServiceRequest.findByPk(serviceRequestId);
@@ -267,6 +289,7 @@ class WebSocketService {
    */
   async handleSendMessage(socket, data) {
     try {
+      console.log('WebSocket: Received send_message:', data);
       const {
         serviceRequestId,
         content,
@@ -323,9 +346,13 @@ class WebSocketService {
         senderId: socket.userId,
         senderName: socket.userName,
         senderType: socket.userType,
+        receiverId,
+        receiverType,
         content,
         messageType,
         attachmentUrl,
+        attachmentType: attachmentUrl ? this.getAttachmentType(attachmentUrl) : null,
+        attachmentName: null, // Will be set if attachment is uploaded
         timestamp: message.createdAt,
         isDelivered: message.isDelivered,
         isRead: false,
@@ -333,6 +360,7 @@ class WebSocketService {
 
       // Send to room
       const roomId = `service_request:${serviceRequestId}`;
+      console.log('WebSocket: Emitting new_message to room:', roomId, messageData);
       this.io.to(roomId).emit("new_message", messageData);
 
       // Send push notification to offline users
@@ -544,12 +572,17 @@ class WebSocketService {
 
       return messages.reverse().map((message) => ({
         id: message.id,
+        serviceRequestId: message.serviceRequestId,
         senderId: message.senderId,
         senderName: message.senderUser?.name || message.senderCA?.name,
         senderType: message.senderType,
+        receiverId: message.receiverId,
+        receiverType: message.receiverType,
         content: message.content,
         messageType: message.messageType,
         attachmentUrl: message.attachmentUrl,
+        attachmentType: message.attachmentType,
+        attachmentName: message.attachmentName,
         timestamp: message.createdAt,
         isDelivered: message.isDelivered,
         isRead: message.isRead,

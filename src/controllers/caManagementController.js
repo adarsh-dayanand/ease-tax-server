@@ -231,12 +231,8 @@ class CAManagementController {
 
       const validStatuses = [
         "in_progress",
-        "documents_requested",
-        "under_review",
-        "clarification_needed",
-        "processing",
-        "filed",
         "completed",
+        "cancelled"
       ];
 
       if (!validStatuses.includes(status)) {
@@ -253,21 +249,23 @@ class CAManagementController {
         notes
       );
 
-      // Send notification to user about status change
-      await notificationService.createNotification(
-        result.userId,
-        "user",
-        "consultation_status_updated",
-        "Service Status Updated",
-        `Your service status has been updated to: ${status.replace("_", " ").toUpperCase()}`,
-        {
-          serviceRequestId: requestId,
-          actionUrl: `/consultations/${requestId}`,
-          actionText: "View Details",
-          priority: "medium",
-          templateData: { status, notes },
-        }
-      );
+      // Send notification to user about status change (only for completed status)
+      if (status === 'completed') {
+        await notificationService.createNotification(
+          result.userId,
+          "user",
+          "consultation_completed",
+          "Service Status Updated",
+          `Your service status has been updated to: ${status.replace("_", " ").toUpperCase()}`,
+          {
+            serviceRequestId: requestId,
+            actionUrl: `/consultations/${requestId}`,
+            actionText: "View Details",
+            priority: "medium",
+            templateData: { status, notes },
+          }
+        );
+      }
 
       res.json({
         success: true,

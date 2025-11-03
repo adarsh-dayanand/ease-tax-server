@@ -201,18 +201,17 @@ const httpServer = server.listen(PORT, () => {
 });
 
 // Graceful shutdown
-process.on("SIGTERM", () => {
-  logger.info("SIGTERM received, shutting down gracefully");
+const gracefulShutdown = (signal) => {
+  logger.info(`${signal} received, shutting down gracefully`);
   httpServer.close(() => {
     logger.info("Process terminated");
     process.exit(0);
   });
-});
+};
 
-process.on("SIGINT", () => {
-  logger.info("SIGINT received, shutting down gracefully");
-  httpServer.close(() => {
-    logger.info("Process terminated");
-    process.exit(0);
-  });
-});
+// Remove existing listeners to prevent memory leaks during development restarts
+process.removeAllListeners('SIGTERM');
+process.removeAllListeners('SIGINT');
+
+process.on("SIGTERM", () => gracefulShutdown('SIGTERM'));
+process.on("SIGINT", () => gracefulShutdown('SIGINT'));

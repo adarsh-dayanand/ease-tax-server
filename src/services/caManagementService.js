@@ -154,7 +154,13 @@ class CAManagementService {
       const whereClause = { caId };
 
       if (status) {
-        whereClause.status = status;
+        // Handle comma-separated status values
+        const statusArray = status.split(',').map(s => s.trim());
+        if (statusArray.length > 1) {
+          whereClause.status = { [Op.in]: statusArray };
+        } else {
+          whereClause.status = status;
+        }
       }
 
       const { rows, count } = await ServiceRequest.findAndCountAll({

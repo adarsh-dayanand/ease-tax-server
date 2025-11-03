@@ -234,14 +234,22 @@ class ConsultationService {
         messages = {
           data: rows.map((message) => ({
             id: message.id,
-            sender: message.senderId === consultation.userId ? "user" : "ca",
+            serviceRequestId: message.serviceRequestId,
+            senderId: message.senderId,
+            senderType: message.senderType,
             senderName: message.senderUser?.name,
-            senderProfileImage: message.senderUser?.profileImage,
-            message: message.content,
-            timestamp: this.formatTimestamp(message.createdAt),
-            hasAttachment: !!message.attachmentUrl,
+            senderAvatar: message.senderUser?.profileImage,
+            receiverId: message.receiverId,
+            receiverType: message.receiverType,
+            messageType: message.messageType || 'text',
+            content: message.content,
             attachmentUrl: message.attachmentUrl,
             attachmentType: message.attachmentType,
+            attachmentName: message.attachmentName,
+            timestamp: message.createdAt,
+            isDelivered: message.isDelivered,
+            isRead: message.isRead,
+            hasAttachment: !!message.attachmentUrl,
           })),
           pagination: {
             page,
@@ -286,9 +294,28 @@ class ConsultationService {
       const message = await Message.create({
         serviceRequestId: consultationId,
         senderId,
+        senderType: consultation.userId === senderId ? 'user' : 'ca',
+        receiverId: consultation.userId === senderId ? consultation.caId : consultation.userId,
+        receiverType: consultation.userId === senderId ? 'ca' : 'user',
         content: messageContent,
         attachmentUrl,
         attachmentType: attachmentUrl ? this.getFileType(attachmentUrl) : null,
+      });
+
+      // Fetch the created message with sender info
+      const messageWithSender = await Message.findByPk(message.id, {
+        include: [
+          {
+            model: User,
+            as: "senderUser",
+            attributes: ["id", "name", "profileImage"],
+          },
+          {
+            model: CA,
+            as: "senderCA",
+            attributes: ["id", "name", "profileImage"],
+          },
+        ],
       });
 
       // Clear messages cache
@@ -298,12 +325,23 @@ class ConsultationService {
       await cacheService.del(cacheKey);
 
       return {
-        id: message.id,
-        sender: senderId === consultation.userId ? "user" : "ca",
-        message: message.content,
-        timestamp: this.formatTimestamp(message.createdAt),
-        hasAttachment: !!message.attachmentUrl,
-        attachmentUrl: message.attachmentUrl,
+        id: messageWithSender.id,
+        serviceRequestId: consultationId,
+        senderId: messageWithSender.senderId,
+        senderType: messageWithSender.senderType,
+        senderName: messageWithSender.senderUser?.name || messageWithSender.senderCA?.name,
+        senderAvatar: messageWithSender.senderUser?.profileImage || messageWithSender.senderCA?.profileImage,
+        receiverId: messageWithSender.receiverId,
+        receiverType: messageWithSender.receiverType,
+        messageType: messageWithSender.messageType || 'text',
+        content: messageWithSender.content,
+        attachmentUrl: messageWithSender.attachmentUrl,
+        attachmentType: messageWithSender.attachmentType,
+        attachmentName: messageWithSender.attachmentName,
+        timestamp: messageWithSender.createdAt,
+        isDelivered: messageWithSender.isDelivered,
+        isRead: messageWithSender.isRead,
+        hasAttachment: !!messageWithSender.attachmentUrl,
       };
     } catch (error) {
       logger.error("Error sending message:", error);
