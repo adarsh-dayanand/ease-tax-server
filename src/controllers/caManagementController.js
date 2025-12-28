@@ -97,27 +97,57 @@ class CAManagementController {
       const { requestId } = req.params;
       const caId = req.user.id;
 
+      logger.info("getRequestDetails called", {
+        requestId,
+        caId,
+        userType: req.user.type,
+      });
+
+      if (!requestId) {
+        return res.status(400).json({
+          success: false,
+          message: "Request ID is required",
+        });
+      }
+
       const request = await caManagementService.getRequestDetails(
         requestId,
         caId
       );
 
       if (!request) {
+        logger.warn("Request not found or access denied", {
+          requestId,
+          caId,
+        });
         return res.status(404).json({
           success: false,
           message: "Request not found or access denied",
         });
       }
 
+      logger.info("Request details retrieved successfully", {
+        requestId: request.id,
+      });
+
       res.json({
         success: true,
         data: request,
       });
     } catch (error) {
-      logger.error("Error in getRequestDetails:", error);
+      logger.error("Error in getRequestDetails:", {
+        error: error.message,
+        stack: error.stack,
+        requestId: req.params.requestId,
+        caId: req.user?.id,
+        errorName: error.name,
+      });
       res.status(500).json({
         success: false,
         message: "Internal server error",
+        ...(process.env.NODE_ENV === "development" && {
+          error: error.message,
+        }),
       });
     }
   }

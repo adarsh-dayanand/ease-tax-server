@@ -3,9 +3,16 @@ const { User, CA, Admin } = require("../../models");
 const logger = require("../config/logger");
 
 exports.googleLoginOrRegister = async (req, res) => {
+  logger.info("=== googleLoginOrRegister called ===", {
+    method: req.method,
+    path: req.path,
+    hasIdToken: !!req.body.idToken,
+  });
+
   try {
     const { idToken } = req.body;
     if (!idToken) {
+      logger.warn("Missing idToken in request");
       return res.status(400).json({
         success: false,
         error: {
@@ -44,38 +51,219 @@ exports.googleLoginOrRegister = async (req, res) => {
     }
 
     const decodedToken = verificationResult.data;
-    const { email, name, picture, uid } = decodedToken;
+    
+    // Log full token structure for debugging
+    logger.info("Decoded Firebase token structure", {
+      keys: Object.keys(decodedToken),
+      hasEmail: !!decodedToken.email,
+      hasName: !!decodedToken.name,
+      hasPicture: !!decodedToken.picture,
+      hasUid: !!decodedToken.uid,
+    });
 
+    // Extract fields from token - handle different token structures
+    const email = decodedToken.email;
+    const name = decodedToken.name || decodedToken.display_name;
+    const picture = decodedToken.picture || decodedToken.photo_url || decodedToken.photoURL;
+    const uid = decodedToken.uid;
+
+    // Validate required fields
+    if (!email) {
+      logger.error("Email missing from Firebase token", {
+        tokenKeys: Object.keys(decodedToken),
+      });
+      throw new Error("Email is required but not found in token");
+    }
+    if (!uid) {
+      logger.error("UID missing from Firebase token", {
+        tokenKeys: Object.keys(decodedToken),
+      });
+      throw new Error("UID is required but not found in token");
+    }
+
+    // Ensure name has a value (required field in database)
+    const userName = name || email.split("@")[0] || "User";
+    
     logger.info("Firebase token verified successfully", {
       uid,
       email,
-      name,
+      name: userName,
+      hasPicture: !!picture,
     });
 
-    // Find or create user
-    let userRecord = await User.findOne({ where: { email } });
+    // Normalize email for lookup
+    const normalizedEmail = email.trim().toLowerCase();
+    logger.info("Looking up user by email", { 
+      originalEmail: email,
+      normalizedEmail 
+    });
+    
+    // Find or create user - try both email formats to be safe
+    let userRecord = await User.findOne({ 
+      where: { 
+        email: normalizedEmail 
+      } 
+    });
+    
     if (!userRecord) {
-      userRecord = await User.create({
-        email,
-        name,
-        googleUid: uid,
-        profileImage: picture,
-        lastLogin: new Date(),
+      logger.info("User not found by email, checking by googleUid", { uid });
+      // Also check by googleUid in case email lookup missed it
+      userRecord = await User.findOne({ where: { googleUid: uid } });
+      if (userRecord) {
+        logger.info("User found by googleUid", { 
+          userId: userRecord.id, 
+          email: userRecord.email,
+          googleUid: userRecord.googleUid 
+        });
+      } else {
+        logger.info("User not found by email or googleUid - will create new user");
+      }
+    } else {
+      logger.info("User found by email", { 
+        userId: userRecord.id, 
+        email: userRecord.email,
+        googleUid: userRecord.googleUid 
       });
-      logger.info(`New user registered via Google: ${email}`, {
+    }
+
+    if (!userRecord) {
+      logger.info(`Creating new user: ${email}`, {
+        email,
+        name: userName,
+        googleUid: uid,
+        hasPicture: !!picture,
+      });
+
+      try {
+        // Prepare user data
+        const userData = {
+          email: normalizedEmail,
+          name: userName.trim(),
+          googleUid: uid,
+          profileImage: picture || null,
+          lastLogin: new Date(),
+          status: "active", // Explicitly set status
+        };
+
+        logger.info("Attempting to create user with data", {
+          email: userData.email,
+          name: userData.name,
+          googleUid: userData.googleUid,
+          hasGoogleUid: !!userData.googleUid,
+          status: userData.status,
+        });
+
+        logger.info("Calling User.create() now...");
+        userRecord = await User.create(userData);
+        logger.info("User.create() completed", {
+          userId: userRecord?.id,
+          email: userRecord?.email,
+        });
+        
+        // Reload the user to ensure we have the latest data from database
+        await userRecord.reload();
+        
+        // Double-check: Query database directly to verify user exists
+        const verifyUser = await User.findOne({ 
+          where: { id: userRecord.id },
+          raw: false 
+        });
+        
+        if (!verifyUser) {
+          logger.error("User creation appeared to succeed but user not found in database", {
+            userId: userRecord.id,
+            email,
+            googleUid: uid,
+          });
+          throw new Error("User creation failed - user not persisted to database");
+        }
+        
+        // Use the verified user record
+        userRecord = verifyUser;
+
+        logger.info(`New user registered via Google: ${email}`, {
+          userId: userRecord.id,
+          email: userRecord.email,
+          name: userRecord.name,
+          googleUid: userRecord.googleUid,
+        });
+      } catch (createError) {
+        logger.error(`Failed to create user: ${email}`, {
+          error: createError.message,
+          stack: createError.stack,
+          errorName: createError.name,
+          errorCode: createError.code,
+          sequelizeErrors: createError.errors,
+          userData: {
+            email,
+            name: userName,
+            googleUid: uid,
+          },
+        });
+
+        // Handle unique constraint violations (e.g., if googleUid already exists)
+        if (createError.name === "SequelizeUniqueConstraintError") {
+          logger.warn(`User creation failed due to unique constraint: ${email}`, {
+            error: createError.message,
+            fields: createError.errors?.map(e => e.path),
+          });
+          
+          // Try to find user by googleUid if email lookup failed
+          userRecord = await User.findOne({ where: { googleUid: uid } });
+          if (!userRecord) {
+            // Try by email again
+            userRecord = await User.findOne({ where: { email } });
+          }
+          
+          if (userRecord) {
+            logger.info(`Found existing user after constraint error: ${email}`, {
+              userId: userRecord.id,
+            });
+          } else {
+            throw createError; // Re-throw if we can't find the user
+          }
+        } else {
+          throw createError;
+        }
+      }
+    } else {
+      logger.info(`Existing user found: ${email}`, {
         userId: userRecord.id,
       });
-    } else {
+      
       // Update last login and Google UID if not set
-      await userRecord.update({
+      const updateData = {
         lastLogin: new Date(),
-        googleUid: userRecord.googleUid || uid,
-        profileImage: userRecord.profileImage || picture,
-      });
+      };
+      
+      if (!userRecord.googleUid) {
+        updateData.googleUid = uid;
+      }
+      if (!userRecord.profileImage && picture) {
+        updateData.profileImage = picture;
+      }
+      
+      await userRecord.update(updateData);
       logger.info(`User logged in via Google: ${email}`, {
         userId: userRecord.id,
       });
     }
+
+    // Reload user from database to ensure we have the latest data
+    userRecord = await User.findByPk(userRecord.id);
+    if (!userRecord) {
+      logger.error("User not found after creation/update", {
+        email,
+        uid,
+      });
+      throw new Error("User not found in database after authentication");
+    }
+
+    logger.info("Preparing response for user", {
+      userId: userRecord.id,
+      email: userRecord.email,
+      isNewUser: !userRecord.phone,
+    });
 
     // Return user data (exclude sensitive fields)
     const responseData = {
@@ -90,6 +278,11 @@ exports.googleLoginOrRegister = async (req, res) => {
       lastLogin: userRecord.lastLogin,
     };
 
+    logger.info("Sending successful authentication response", {
+      userId: userRecord.id,
+      email: userRecord.email,
+    });
+
     return res.json({
       success: true,
       data: {
@@ -102,9 +295,59 @@ exports.googleLoginOrRegister = async (req, res) => {
       error: err.message,
       stack: err.stack,
       tokenProvided: !!req.body.idToken,
+      errorName: err.name,
+      errorCode: err.code,
+      sequelizeErrors: err.errors,
     });
 
-    // More specific error handling
+    // Handle Sequelize validation errors
+    if (err.name === "SequelizeValidationError") {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "User data validation failed",
+          details: err.errors?.map(e => ({
+            field: e.path,
+            message: e.message,
+          })),
+        },
+      });
+    }
+
+    // Handle Sequelize unique constraint errors
+    if (err.name === "SequelizeUniqueConstraintError") {
+      return res.status(409).json({
+        success: false,
+        error: {
+          code: "DUPLICATE_ENTRY",
+          message: "User with this email or Google ID already exists",
+          details: err.errors?.map(e => ({
+            field: e.path,
+            message: e.message,
+          })),
+        },
+      });
+    }
+
+    // Handle Sequelize database errors
+    if (err.name === "SequelizeDatabaseError") {
+      logger.error("Database error during user creation", {
+        error: err.message,
+        original: err.original,
+      });
+      return res.status(500).json({
+        success: false,
+        error: {
+          code: "DATABASE_ERROR",
+          message: "Failed to save user to database",
+          details:
+            process.env.NODE_ENV === "development" ? err.message : undefined,
+        },
+      });
+    }
+
+    // More specific error handling for Firebase errors
     if (err.code === "auth/id-token-expired") {
       return res.status(401).json({
         success: false,
@@ -135,11 +378,11 @@ exports.googleLoginOrRegister = async (req, res) => {
       });
     }
 
-    return res.status(401).json({
+    return res.status(500).json({
       success: false,
       error: {
-        code: "INVALID_TOKEN",
-        message: "Invalid Firebase token",
+        code: "INTERNAL_ERROR",
+        message: "An error occurred during authentication",
         details:
           process.env.NODE_ENV === "development" ? err.message : undefined,
       },

@@ -145,19 +145,19 @@ const CONSTANTS = {
   RATE_LIMITS: {
     GLOBAL: {
       WINDOW_MS: 15 * 60 * 1000, // 15 minutes
-      MAX_REQUESTS: 100
+      MAX_REQUESTS: 1000 // Increased from 100 to 1000 requests per 15 minutes
     },
     AUTH: {
       WINDOW_MS: 15 * 60 * 1000, // 15 minutes
-      MAX_REQUESTS: 5 // 5 login attempts per 15 minutes
+      MAX_REQUESTS: 50 // Increased from 5 to 50 login attempts per 15 minutes
     },
     UPLOAD: {
       WINDOW_MS: 60 * 1000, // 1 minute
-      MAX_REQUESTS: 10 // 10 uploads per minute
+      MAX_REQUESTS: 100 // Increased from 10 to 100 uploads per minute
     },
     SEARCH: {
       WINDOW_MS: 60 * 1000, // 1 minute
-      MAX_REQUESTS: 30 // 30 searches per minute
+      MAX_REQUESTS: 200 // Increased from 30 to 200 searches per minute
     }
   },
 

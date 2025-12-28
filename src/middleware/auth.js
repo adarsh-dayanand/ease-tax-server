@@ -35,13 +35,39 @@ const authenticateToken = async (req, res, next) => {
       // Firebase token is valid
       const { uid, email, email_verified } = firebaseResult.data;
 
+      logger.info("Authenticating user with Firebase token", {
+        uid,
+        email,
+        path: req.path,
+      });
+
       // Check if user exists in our database - be explicit about type
+      // First try by googleUid, then by email as fallback
       let user = await User.findOne({ where: { googleUid: uid } });
+      
+      // If not found by googleUid, try by email (for users who signed up before googleUid was set)
+      if (!user && email) {
+        user = await User.findOne({ where: { email: email.toLowerCase().trim() } });
+        // If found by email but googleUid is missing, update it
+        if (user && !user.googleUid) {
+          await user.update({ googleUid: uid });
+          logger.info("Updated user with googleUid", { userId: user.id, email });
+        }
+      }
+      
       let userType = "user";
 
       if (!user) {
         // Check if it's a CA - but only if they have a pre-existing CA record
         user = await CA.findOne({ where: { googleUid: uid } });
+        if (!user && email) {
+          user = await CA.findOne({ where: { email: email.toLowerCase().trim() } });
+          if (user && !user.googleUid) {
+            await user.update({ googleUid: uid });
+            logger.info("Updated CA with googleUid", { caId: user.id, email });
+          }
+        }
+        
         if (user) {
           userType = "ca";
           // Additional security: verify CA is actually verified/active
@@ -57,6 +83,14 @@ const authenticateToken = async (req, res, next) => {
         } else {
           // Check if it's an admin
           user = await Admin.findOne({ where: { googleUid: uid } });
+          if (!user && email) {
+            user = await Admin.findOne({ where: { email: email.toLowerCase().trim() } });
+            if (user && !user.googleUid) {
+              await user.update({ googleUid: uid });
+              logger.info("Updated admin with googleUid", { adminId: user.id, email });
+            }
+          }
+          
           if (user) {
             userType = "admin";
             // Additional security: verify admin is active
@@ -74,13 +108,69 @@ const authenticateToken = async (req, res, next) => {
       }
 
       if (!user) {
-        return res.status(401).json({
-          success: false,
-          error: {
-            code: CONSTANTS.ERROR_CODES.USER_NOT_FOUND,
-            message: "Account not found in system. Please contact support.",
-          },
-        });
+        // User doesn't exist - try to auto-create for regular users (not CA/Admin)
+        // This handles the case where user signs in but creation failed
+        if (email && userType === "user") {
+          logger.info("User not found, attempting auto-creation", {
+            uid,
+            email,
+            path: req.path,
+          });
+          
+          try {
+            // Extract name from email or use default
+            const name = email.split("@")[0] || "User";
+            
+            user = await User.create({
+              email: email.toLowerCase().trim(),
+              name,
+              googleUid: uid,
+              status: "active",
+            });
+            
+            logger.info("Auto-created user in middleware", {
+              userId: user.id,
+              email: user.email,
+            });
+          } catch (createError) {
+            logger.error("Failed to auto-create user in middleware", {
+              error: createError.message,
+              uid,
+              email,
+              errorName: createError.name,
+            });
+            
+            // If creation fails, check if user was created by another request
+            user = await User.findOne({ where: { email: email.toLowerCase().trim() } });
+            if (user && !user.googleUid) {
+              await user.update({ googleUid: uid });
+            }
+            
+            if (!user) {
+              return res.status(401).json({
+                success: false,
+                error: {
+                  code: CONSTANTS.ERROR_CODES.USER_NOT_FOUND,
+                  message: "Account not found in system. Please complete the sign-in process first by calling /api/auth/user/google",
+                },
+              });
+            }
+          }
+        } else {
+          logger.warn("User not found in database", {
+            uid,
+            email,
+            path: req.path,
+            userType,
+          });
+          return res.status(401).json({
+            success: false,
+            error: {
+              code: CONSTANTS.ERROR_CODES.USER_NOT_FOUND,
+              message: "Account not found in system. Please complete the sign-in process first.",
+            },
+          });
+        }
       }
 
       // Attach user info to request

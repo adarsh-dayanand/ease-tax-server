@@ -226,6 +226,11 @@ class CAManagementService {
    */
   async getRequestDetails(requestId, caId) {
     try {
+      logger.info("Getting request details", {
+        requestId,
+        caId,
+      });
+
       const request = await ServiceRequest.findOne({
         where: { id: requestId, caId },
         include: [
@@ -241,10 +246,12 @@ class CAManagementService {
               "pan",
               "gstin",
             ],
+            required: false, // Make user optional in case of data inconsistency
           },
           {
             model: Payment,
             as: "payments",
+            required: false,
           },
           {
             model: Document,
@@ -261,12 +268,24 @@ class CAManagementService {
       });
 
       if (!request) {
+        logger.warn("Request not found", {
+          requestId,
+          caId,
+        });
         return null;
       }
 
+      logger.info("Request found, preparing response", {
+        requestId: request.id,
+        hasUser: !!request.user,
+        paymentsCount: request.payments?.length || 0,
+        documentsCount: request.documents?.length || 0,
+        hasMeeting: !!request.meeting,
+      });
+
       return {
         id: request.id,
-        user: request.user,
+        user: request.user || null,
         serviceType: request.serviceType,
         purpose: request.purpose,
         additionalNotes: request.additionalNotes,
@@ -279,8 +298,8 @@ class CAManagementService {
         priority: request.priority,
         createdAt: request.createdAt,
         metadata: request.metadata,
-        payments: request.payments,
-        documents: request.documents?.map((doc) => ({
+        payments: request.payments || [],
+        documents: (request.documents || []).map((doc) => ({
           id: doc.id,
           name: doc.originalName,
           fileType: doc.fileType,
@@ -288,13 +307,19 @@ class CAManagementService {
           status: doc.status,
           createdAt: doc.createdAt,
         })),
-        meeting: request.meeting,
-        hasEscrowPayment: request.payments?.some(
+        meeting: request.meeting || null,
+        hasEscrowPayment: (request.payments || []).some(
           (p) => p.paymentType === "booking_fee" && p.status === "completed"
         ),
       };
     } catch (error) {
-      logger.error("Error getting request details:", error);
+      logger.error("Error getting request details:", {
+        error: error.message,
+        stack: error.stack,
+        requestId,
+        caId,
+        errorName: error.name,
+      });
       throw error;
     }
   }

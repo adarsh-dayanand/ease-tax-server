@@ -82,7 +82,7 @@ const apiRateLimit = createRateLimiter({
  */
 const strictRateLimit = createRateLimiter({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // Only 10 requests per 15 minutes
+  max: 100, // Increased from 10 to 100 requests per 15 minutes
   message: "Too many requests for this operation, please try again later",
 });
 
@@ -91,7 +91,7 @@ const strictRateLimit = createRateLimiter({
  */
 const downloadRateLimit = createRateLimiter({
   windowMs: 5 * 60 * 1000, // 5 minutes
-  max: 20, // 20 downloads per 5 minutes
+  max: 200, // Increased from 20 to 200 downloads per 5 minutes
   message: "Too many download requests, please try again later",
 });
 
@@ -194,7 +194,7 @@ const userTypeRateLimit = (req, res, next) => {
     // Anonymous users get stricter limits
     return createRateLimiter({
       windowMs: 15 * 60 * 1000,
-      max: 20,
+      max: 200, // Increased from 20 to 200
       message: "Too many requests from anonymous user, please login",
     })(req, res, next);
   }
@@ -203,7 +203,7 @@ const userTypeRateLimit = (req, res, next) => {
     // CAs get higher limits
     return createRateLimiter({
       windowMs: 15 * 60 * 1000,
-      max: 200,
+      max: 2000, // Increased from 200 to 2000
       message: "Too many requests, please try again later",
     })(req, res, next);
   }
@@ -211,7 +211,7 @@ const userTypeRateLimit = (req, res, next) => {
   // Regular users
   return createRateLimiter({
     windowMs: 15 * 60 * 1000,
-    max: 100,
+    max: 1000, // Increased from 100 to 1000
     message: "Too many requests, please try again later",
   })(req, res, next);
 };
@@ -226,7 +226,7 @@ const dynamicRateLimit = (req, res, next) => {
   if (path.includes("/payment")) {
     return createRateLimiter({
       windowMs: 5 * 60 * 1000, // 5 minutes
-      max: 5,
+      max: 50, // Increased from 5 to 50
       message: "Too many payment requests, please try again later",
     })(req, res, next);
   }

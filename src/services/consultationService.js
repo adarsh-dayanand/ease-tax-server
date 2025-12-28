@@ -241,7 +241,7 @@ class ConsultationService {
             senderAvatar: message.senderUser?.profileImage,
             receiverId: message.receiverId,
             receiverType: message.receiverType,
-            messageType: message.messageType || 'text',
+            messageType: message.messageType || "text",
             content: message.content,
             attachmentUrl: message.attachmentUrl,
             attachmentType: message.attachmentType,
@@ -294,9 +294,12 @@ class ConsultationService {
       const message = await Message.create({
         serviceRequestId: consultationId,
         senderId,
-        senderType: consultation.userId === senderId ? 'user' : 'ca',
-        receiverId: consultation.userId === senderId ? consultation.caId : consultation.userId,
-        receiverType: consultation.userId === senderId ? 'ca' : 'user',
+        senderType: consultation.userId === senderId ? "user" : "ca",
+        receiverId:
+          consultation.userId === senderId
+            ? consultation.caId
+            : consultation.userId,
+        receiverType: consultation.userId === senderId ? "ca" : "user",
         content: messageContent,
         attachmentUrl,
         attachmentType: attachmentUrl ? this.getFileType(attachmentUrl) : null,
@@ -329,11 +332,15 @@ class ConsultationService {
         serviceRequestId: consultationId,
         senderId: messageWithSender.senderId,
         senderType: messageWithSender.senderType,
-        senderName: messageWithSender.senderUser?.name || messageWithSender.senderCA?.name,
-        senderAvatar: messageWithSender.senderUser?.profileImage || messageWithSender.senderCA?.profileImage,
+        senderName:
+          messageWithSender.senderUser?.name ||
+          messageWithSender.senderCA?.name,
+        senderAvatar:
+          messageWithSender.senderUser?.profileImage ||
+          messageWithSender.senderCA?.profileImage,
         receiverId: messageWithSender.receiverId,
         receiverType: messageWithSender.receiverType,
-        messageType: messageWithSender.messageType || 'text',
+        messageType: messageWithSender.messageType || "text",
         content: messageWithSender.content,
         attachmentUrl: messageWithSender.attachmentUrl,
         attachmentType: messageWithSender.attachmentType,
