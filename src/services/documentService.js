@@ -185,14 +185,21 @@ class DocumentService {
 
       // Send real-time notification to the other party
       const notificationService = require("./notificationService");
-      const recipientId = consultation.userId === userId ? consultation.caId : consultation.userId;
+      const recipientId =
+        consultation.userId === userId
+          ? consultation.caId
+          : consultation.userId;
       const recipientType = consultation.userId === userId ? "ca" : "user";
 
-      await notificationService.notifyDocumentUploaded(recipientId, recipientType, {
-        id: document.id,
-        name: document.name,
-        serviceRequestId: consultationId,
-      });
+      await notificationService.notifyDocumentUploaded(
+        recipientId,
+        recipientType,
+        {
+          id: document.id,
+          name: document.name,
+          serviceRequestId: consultationId,
+        }
+      );
 
       return document;
     } catch (error) {
@@ -210,6 +217,11 @@ class DocumentService {
 
       if (!document) {
         throw new Error("Document not found");
+      }
+
+      // Check if document is deleted
+      if (document.status === "deleted") {
+        throw new Error("Document has been deleted");
       }
 
       // Check access permissions (user should be part of the service request)
@@ -272,15 +284,35 @@ class DocumentService {
         }
       }
 
+      // Check if document has S3 metadata
+      if (!document.metadata || !document.metadata.s3Key) {
+        logger.error("Document missing S3 metadata", {
+          documentId,
+          hasMetadata: !!document.metadata,
+          metadata: document.metadata,
+        });
+        throw new Error("Document storage information not found");
+      }
+
       // Generate presigned URL for secure download
       const downloadParams = {
         Bucket: BUCKET_NAME,
         Key: document.metadata.s3Key,
         Expires: 3600, // URL expires in 1 hour
-        ResponseContentDisposition: `attachment; filename="${document.originalName}"`,
+        ResponseContentDisposition: `attachment; filename="${encodeURIComponent(document.originalName)}"`,
       };
 
-      const downloadUrl = s3.getSignedUrl("getObject", downloadParams);
+      let downloadUrl;
+      try {
+        downloadUrl = s3.getSignedUrl("getObject", downloadParams);
+      } catch (s3Error) {
+        logger.error("Error generating S3 presigned URL", {
+          error: s3Error.message,
+          bucket: BUCKET_NAME,
+          key: document.metadata.s3Key,
+        });
+        throw new Error("Failed to generate download URL");
+      }
 
       // Update download count and last accessed
       await document.update({
@@ -354,10 +386,11 @@ class DocumentService {
       let documents = await cacheService.get(cacheKey);
 
       if (!documents) {
+        const { Op } = require("sequelize");
         const docs = await Document.findAll({
           where: {
             serviceRequestId,
-            status: { [require("sequelize").Op.ne]: "deleted" },
+            status: { [Op.ne]: "deleted" },
           },
           order: [["createdAt", "DESC"]],
           include: [
@@ -392,6 +425,42 @@ class DocumentService {
 
         // Cache for 30 minutes
         await cacheService.set(cacheKey, documents, 1800);
+      } else {
+        // Even if cached, filter out any deleted documents as a safeguard
+        // This handles cases where cache wasn't cleared properly
+        documents = documents.filter((doc) => doc.status !== "deleted");
+
+        // If we filtered out documents, update the cache
+        const { Op } = require("sequelize");
+        const currentDocs = await Document.findAll({
+          where: {
+            serviceRequestId,
+            status: { [Op.ne]: "deleted" },
+          },
+          attributes: ["id"],
+        });
+
+        const cachedIds = new Set(documents.map((d) => d.id));
+        const currentIds = new Set(currentDocs.map((d) => d.id.toString()));
+
+        // If cache is out of sync, refresh it
+        if (
+          cachedIds.size !== currentIds.size ||
+          !Array.from(cachedIds).every((id) => currentIds.has(id.toString()))
+        ) {
+          logger.info("Cache out of sync, refreshing consultation documents", {
+            serviceRequestId,
+            cachedCount: cachedIds.size,
+            currentCount: currentIds.size,
+          });
+
+          // Clear cache and fetch fresh data
+          await cacheService.del(cacheKey);
+          return await this.getServiceRequestDocuments(
+            serviceRequestId,
+            requestingUserId
+          );
+        }
       }
 
       return documents;
@@ -412,18 +481,51 @@ class DocumentService {
         throw new Error("Document not found");
       }
 
-      // Check if user is the uploader
-      if (document.uploadedBy !== userId) {
-        throw new Error("Access denied - only uploader can delete document");
+      // Check if document is already deleted
+      if (document.status === "deleted") {
+        throw new Error("Document has already been deleted");
       }
 
-      // Delete from S3
-      const deleteParams = {
-        Bucket: BUCKET_NAME,
-        Key: document.metadata.s3Key,
-      };
+      // Check access permissions - ONLY the uploader can delete
+      if (document.uploadedBy !== userId) {
+        logger.warn("Document deletion denied - not the uploader", {
+          documentId,
+          userId,
+          uploadedBy: document.uploadedBy,
+        });
+        throw new Error(
+          "Access denied - only the uploader can delete this document"
+        );
+      }
 
-      await s3.deleteObject(deleteParams).promise();
+      // Delete from S3 if metadata exists
+      if (document.metadata && document.metadata.s3Key) {
+        try {
+          const deleteParams = {
+            Bucket: BUCKET_NAME,
+            Key: document.metadata.s3Key,
+          };
+
+          await s3.deleteObject(deleteParams).promise();
+          logger.info("Document deleted from S3", {
+            documentId,
+            s3Key: document.metadata.s3Key,
+          });
+        } catch (s3Error) {
+          // Log S3 deletion error but continue with database deletion
+          logger.error("Error deleting document from S3", {
+            error: s3Error.message,
+            documentId,
+            s3Key: document.metadata.s3Key,
+          });
+          // Don't throw - we'll still mark it as deleted in DB
+        }
+      } else {
+        logger.warn("Document missing S3 metadata, skipping S3 deletion", {
+          documentId,
+          hasMetadata: !!document.metadata,
+        });
+      }
 
       // Mark as deleted in database (soft delete)
       await document.update({
@@ -431,12 +533,26 @@ class DocumentService {
         deletedAt: new Date(),
       });
 
-      // Clear cache
+      logger.info("Document marked as deleted", {
+        documentId,
+        userId,
+        serviceRequestId: document.serviceRequestId,
+      });
+
+      // Clear cache for consultation documents
       await this.clearDocumentCache(document.serviceRequestId);
+
+      // Also clear user documents cache
+      await this.clearUserDocumentsCache(document.uploadedBy);
 
       return { success: true, message: "Document deleted successfully" };
     } catch (error) {
-      logger.error("Error deleting document:", error);
+      logger.error("Error deleting document:", {
+        error: error.message,
+        stack: error.stack,
+        documentId,
+        userId,
+      });
       throw error;
     }
   }
@@ -481,14 +597,19 @@ class DocumentService {
 
       // Send real-time notification about document verification
       const notificationService = require("./notificationService");
-      const consultation = await ServiceRequest.findByPk(document.serviceRequestId);
+      const consultation = await ServiceRequest.findByPk(
+        document.serviceRequestId
+      );
 
       if (consultation) {
-        const notificationType = status === "verified" ? "document_verified" : "document_rejected";
-        const title = status === "verified" ? "Document Verified" : "Document Rejected";
-        const message = status === "verified"
-          ? `Your document "${document.originalName}" has been verified`
-          : `Your document "${document.originalName}" was rejected${rejectionReason ? `: ${rejectionReason}` : ""}`;
+        const notificationType =
+          status === "verified" ? "document_verified" : "document_rejected";
+        const title =
+          status === "verified" ? "Document Verified" : "Document Rejected";
+        const message =
+          status === "verified"
+            ? `Your document "${document.originalName}" has been verified`
+            : `Your document "${document.originalName}" was rejected${rejectionReason ? `: ${rejectionReason}` : ""}`;
 
         await notificationService.createNotification(
           consultation.userId,
@@ -503,7 +624,7 @@ class DocumentService {
             priority: "medium",
             templateData: {
               documentName: document.originalName,
-              rejectionReason: rejectionReason
+              rejectionReason: rejectionReason,
             },
           }
         );
@@ -543,6 +664,67 @@ class DocumentService {
   }
 
   /**
+   * Get user documents
+   */
+  async getUserDocuments(userId, page = 1, limit = 10, documentType = null) {
+    try {
+      const { Op } = require("sequelize");
+      const ServiceRequest = require("../../models").ServiceRequest;
+      const offset = (page - 1) * limit;
+
+      const whereClause = {
+        uploadedBy: userId,
+        status: { [Op.ne]: "deleted" }, // Exclude deleted documents
+      };
+
+      if (documentType) {
+        whereClause.fileType = documentType;
+      }
+
+      const { rows, count } = await Document.findAndCountAll({
+        where: whereClause,
+        limit,
+        offset,
+        order: [["createdAt", "DESC"]],
+        include: [
+          {
+            model: ServiceRequest,
+            as: "serviceRequest",
+            attributes: ["id", "status"],
+            required: false,
+          },
+        ],
+      });
+
+      const documents = rows.map((doc) => ({
+        id: doc.id,
+        name: doc.originalName,
+        size: this.formatFileSize(doc.fileSize),
+        uploadedAt: doc.createdAt,
+        type: doc.fileType,
+        status: doc.status,
+        serviceRequestId: doc.serviceRequestId,
+        consultationStatus: doc.serviceRequest?.status,
+        mimeType: doc.mimeType,
+        downloadCount: doc.downloadCount,
+      }));
+
+      return {
+        data: documents,
+        pagination: {
+          page,
+          limit,
+          total: count,
+          totalPages: Math.ceil(count / limit),
+        },
+      };
+    } catch (error) {
+      logger.error("Error getting user documents:", error);
+      throw error;
+    }
+  }
+
+  /**
    * Clear document related cache
    */
   async clearDocumentCache(serviceRequestId) {
@@ -551,8 +733,30 @@ class DocumentService {
         .getCacheKeys()
         .CONSULTATION_DOCUMENTS(serviceRequestId);
       await cacheService.del(cacheKey);
+      logger.info("Cleared consultation documents cache", { serviceRequestId });
     } catch (error) {
       logger.error("Error clearing document cache:", error);
+    }
+  }
+
+  /**
+   * Clear user documents cache
+   */
+  async clearUserDocumentsCache(userId) {
+    try {
+      // Clear cache for all possible user document queries
+      // Since we don't know the exact cache key format, we'll try common patterns
+      const cacheKeys = [
+        `user_documents_${userId}`,
+        `easetax:user:${userId}:documents`,
+      ];
+
+      for (const key of cacheKeys) {
+        await cacheService.del(key);
+      }
+      logger.info("Cleared user documents cache", { userId });
+    } catch (error) {
+      logger.error("Error clearing user documents cache:", error);
     }
   }
 

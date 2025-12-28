@@ -187,6 +187,12 @@ class ConsultationController {
         userId
       );
 
+      // Set cache control headers to prevent browser caching
+      // This ensures deleted documents don't appear due to browser cache
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+
       res.json({
         success: true,
         data: documents,

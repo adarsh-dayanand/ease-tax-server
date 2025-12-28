@@ -121,8 +121,6 @@ class ConsultationService {
           id: serviceRequest.id,
           caName: serviceRequest.ca?.name || "CA Name",
           caImage: serviceRequest.ca?.profileImage,
-          date: serviceRequest.scheduledDate,
-          time: serviceRequest.scheduledTime,
           type: "video", // Default consultation type
           purpose: serviceRequest.purpose,
           status: serviceRequest.status,
@@ -132,7 +130,6 @@ class ConsultationService {
               : "unpaid",
           durationMinutes: 30, // Default duration
           experienceLevel: serviceRequest.caService?.experienceLevel,
-          price: serviceRequest.estimatedAmount || serviceRequest.finalAmount,
           currency: serviceRequest?.caService?.currency || "INR",
           notes: serviceRequest.additionalNotes,
           progress: this.calculateProgress(serviceRequest.status),

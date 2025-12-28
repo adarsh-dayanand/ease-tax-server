@@ -126,14 +126,11 @@ class UserService {
             id: sr.id,
             caName: sr.ca?.name || "Pending CA Assignment",
             caImage: sr.ca?.profileImage,
-            date: sr.scheduledDate,
-            time: sr.scheduledTime,
             type: "video", // Default consultation type
             purpose: sr.purpose,
             status: sr.status,
             paymentStatus: this.getPaymentStatus(sr.payments),
             durationMinutes: 30, // Default duration
-            price: sr.estimatedAmount || sr.finalAmount,
             experienceLevel: sr.caService?.experienceLevel,
             currency: sr?.caService?.currency || "INR",
             notes: sr.additionalNotes,

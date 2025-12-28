@@ -55,6 +55,11 @@ router.post(
   upload,
   documentController.uploadConsultationDocument
 );
+router.get(
+  "/:consultationId/documents/:docId/download",
+  rateLimit.downloadRateLimit,
+  documentController.downloadDocument
+);
 router.delete(
   "/:consultationId/documents/:docId",
   rateLimit.apiRateLimit,

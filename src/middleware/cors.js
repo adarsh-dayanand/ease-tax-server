@@ -132,18 +132,20 @@ const webhookCors = cors({
  */
 const dynamicCors = (req, res, next) => {
   const path = req.path.toLowerCase();
+  const method = req.method.toUpperCase();
 
   // Webhook routes
   if (path.includes("/webhook")) {
     return webhookCors(req, res, next);
   }
 
-  // Upload routes
-  if (path.includes("/upload") || path.includes("/document")) {
+  // Upload routes - only for POST requests
+  // For DELETE/GET requests on document routes, use apiCors
+  if ((path.includes("/upload") || path.includes("/document")) && method === "POST") {
     return uploadCors(req, res, next);
   }
 
-  // Default API CORS
+  // Default API CORS (handles GET, DELETE, PUT, PATCH, etc.)
   return apiCors(req, res, next);
 };
 

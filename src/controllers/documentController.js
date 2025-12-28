@@ -136,41 +136,121 @@ class DocumentController {
    */
   async downloadDocument(req, res) {
     try {
-      const { docId } = req.params;
+      const { docId, consultationId } = req.params;
       const userId = req.user.id;
+
+      // If consultationId is provided, validate that the document belongs to this consultation
+      if (consultationId) {
+        const Document = require("../../models").Document;
+        const document = await Document.findByPk(docId);
+        
+        if (!document) {
+          return res.status(404).json({
+            success: false,
+            message: "Document not found",
+          });
+        }
+
+        // Verify document belongs to the specified consultation/service request
+        if (document.serviceRequestId !== consultationId) {
+          return res.status(403).json({
+            success: false,
+            message: "Document does not belong to this consultation",
+          });
+        }
+      }
 
       const fileInfo = await documentService.downloadDocument(docId, userId);
 
-      res.setHeader(
-        "Content-Disposition",
-        `attachment; filename="${fileInfo.filename}"`
-      );
-      res.setHeader("Content-Type", fileInfo.mimetype);
+      logger.info("Document download initiated", {
+        docId,
+        userId,
+        hasDownloadUrl: !!fileInfo.downloadUrl,
+        filename: fileInfo.filename,
+      });
 
-      res.sendFile(fileInfo.path, { root: "." });
+      // If downloadUrl is provided (S3 presigned URL)
+      if (fileInfo.downloadUrl) {
+        // Check if client wants JSON response (for frontend to handle download)
+        const acceptHeader = req.headers.accept || "";
+        const wantsJson = acceptHeader.includes("application/json") || req.query.format === "json";
+
+        if (wantsJson) {
+          // Return URL as JSON for frontend to handle
+          return res.json({
+            success: true,
+            data: {
+              downloadUrl: fileInfo.downloadUrl,
+              filename: fileInfo.filename,
+              fileSize: fileInfo.fileSize,
+              contentType: fileInfo.contentType,
+            },
+          });
+        } else {
+          // Redirect to presigned URL (browser will handle download)
+          res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+          res.setHeader("Pragma", "no-cache");
+          res.setHeader("Expires", "0");
+          return res.redirect(fileInfo.downloadUrl);
+        }
+      }
+
+      // Otherwise, send file directly (for local storage)
+      if (fileInfo.path) {
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="${encodeURIComponent(fileInfo.filename)}"`
+        );
+        res.setHeader("Content-Type", fileInfo.contentType || fileInfo.mimetype || "application/octet-stream");
+        return res.sendFile(fileInfo.path, { root: "." });
+      }
+
+      // Return file info as JSON if neither URL nor path is available
+      // This allows frontend to handle the download
+      return res.json({
+        success: true,
+        data: fileInfo,
+      });
     } catch (error) {
       logger.error("Error in downloadDocument:", error);
 
       if (
         error.message === "Document not found" ||
-        error.message === "File not found on server"
+        error.message === "File not found on server" ||
+        error.message === "Document has been deleted"
       ) {
         return res.status(404).json({
           success: false,
-          message: "Document not found",
+          message: error.message || "Document not found",
         });
       }
 
-      if (error.message === "Access denied") {
+      if (
+        error.message === "Access denied" ||
+        error.message.includes("Access denied")
+      ) {
         return res.status(403).json({
           success: false,
-          message: "Access denied",
+          message: error.message || "Access denied",
+        });
+      }
+
+      if (
+        error.message === "Document storage information not found" ||
+        error.message === "Failed to generate download URL"
+      ) {
+        return res.status(500).json({
+          success: false,
+          message: error.message || "Failed to prepare document for download",
         });
       }
 
       res.status(500).json({
         success: false,
         message: "Internal server error",
+        ...(process.env.NODE_ENV === "development" && {
+          error: error.message,
+        }),
       });
     }
   }
@@ -181,35 +261,91 @@ class DocumentController {
    */
   async deleteDocument(req, res) {
     try {
-      const { docId } = req.params;
+      const { docId, consultationId } = req.params;
       const userId = req.user.id;
+      const userType = req.user.type;
+
+      logger.info("Delete document request", {
+        docId,
+        consultationId,
+        userId,
+        userType,
+      });
+
+      // If consultationId is provided, validate that the document belongs to this consultation
+      if (consultationId) {
+        const Document = require("../../models").Document;
+        const document = await Document.findByPk(docId);
+        
+        if (!document) {
+          return res.status(404).json({
+            success: false,
+            message: "Document not found",
+          });
+        }
+
+        // Verify document belongs to the specified consultation/service request
+        if (document.serviceRequestId !== consultationId) {
+          return res.status(403).json({
+            success: false,
+            message: "Document does not belong to this consultation",
+          });
+        }
+      }
 
       await documentService.deleteDocument(docId, userId);
+
+      logger.info("Document deleted successfully", {
+        docId,
+        userId,
+      });
 
       res.json({
         success: true,
         message: "Document deleted successfully",
       });
     } catch (error) {
-      logger.error("Error in deleteDocument:", error);
+      logger.error("Error in deleteDocument:", {
+        error: error.message,
+        stack: error.stack,
+        docId: req.params.docId,
+        userId: req.user?.id,
+      });
 
-      if (error.message === "Document not found") {
+      if (
+        error.message === "Document not found" ||
+        error.message === "Service request not found"
+      ) {
         return res.status(404).json({
           success: false,
-          message: "Document not found",
+          message: error.message || "Document not found",
         });
       }
 
-      if (error.message === "Access denied") {
+      if (
+        error.message === "Access denied" ||
+        error.message.includes("Access denied") ||
+        error.message.includes("permission")
+      ) {
         return res.status(403).json({
           success: false,
-          message: "Access denied",
+          message: error.message || "Access denied",
+        });
+      }
+
+      if (error.message === "Document has already been deleted") {
+        return res.status(409).json({
+          success: false,
+          message: error.message,
         });
       }
 
       res.status(500).json({
         success: false,
         message: "Internal server error",
+        ...(process.env.NODE_ENV === "development" && {
+          error: error.message,
+        }),
       });
     }
   }
