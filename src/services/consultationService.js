@@ -65,6 +65,8 @@ class ConsultationService {
       // Clear related caches
       await this.clearConsultationCache(consultation.id);
       await cacheService.delPattern(`user:consultations:${userId}`);
+      // Clear CA dashboard cache since a new request was created
+      await cacheService.del(cacheService.getCacheKeys().CA_DASHBOARD(caService.caId));
 
       return await this.getConsultationDetails(consultation.id);
     } catch (error) {

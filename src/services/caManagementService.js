@@ -38,7 +38,10 @@ class CAManagementService {
             where: { caId, status: "pending" },
           }),
           ServiceRequest.count({
-            where: { caId, status: { [Op.in]: ["accepted", "in_progress"] } },
+            where: {
+              caId,
+              status: { [Op.in]: ["pending", "accepted", "in_progress"] },
+            },
           }),
           ServiceRequest.count({
             where: { caId, status: "completed" },
@@ -70,6 +73,14 @@ class CAManagementService {
             ],
           }),
         ]);
+
+        // Log counts for debugging
+        logger.info(`CA Dashboard counts for ${caId}:`, {
+          totalRequests,
+          pendingRequests,
+          acceptedRequests,
+          completedRequests,
+        });
 
         // Calculate total earnings from payments
         // IMPORTANT: Commission should be calculated on FULL SERVICE PRICE (totalAmount), not on (servicePrice - bookingFee)
@@ -164,10 +175,14 @@ class CAManagementService {
             completedRequests: completedRequests || 0,
             totalEarnings: totalEarnings || 0,
             avgRating: avgRating || 0,
-            successRate:
-              totalRequests > 0
-                ? ((completedRequests / totalRequests) * 100).toFixed(1)
-                : 0,
+            successRate: (() => {
+              // Calculate success rate excluding pending requests
+              // Only consider approved (accepted/in_progress), rejected, and completed requests
+              const processedRequests = totalRequests - pendingRequests;
+              return processedRequests > 0
+                ? ((completedRequests / processedRequests) * 100).toFixed(1)
+                : "0.0";
+            })(),
             ratingDistribution: ratingDistribution || [
               { rating: 5, count: 0 },
               { rating: 4, count: 0 },
