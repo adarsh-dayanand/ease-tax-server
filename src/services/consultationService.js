@@ -94,7 +94,24 @@ class ConsultationService {
               as: "ca",
               attributes: ["id", "name", "profileImage", "location"],
             },
-            { model: CAService, as: "caService" },
+            {
+              model: CAService,
+              as: "caService",
+              attributes: [
+                "id",
+                "customPrice",
+                "currency",
+                "experienceLevel",
+                "customDuration",
+              ],
+              include: [
+                {
+                  model: require("../../models").Service,
+                  as: "service",
+                  attributes: ["id", "name", "description", "category"],
+                },
+              ],
+            },
             {
               model: Payment,
               as: "payments",
@@ -103,6 +120,7 @@ class ConsultationService {
                 "amount",
                 "currency",
                 "status",
+                "paymentType",
                 "paymentGateway",
                 "paymentMethod",
                 "transactionReference",
@@ -117,6 +135,28 @@ class ConsultationService {
           return null;
         }
 
+        // Get base service price from CAService.customPrice (CA's price for this service)
+        const servicePrice = serviceRequest.caService?.customPrice
+          ? parseFloat(serviceRequest.caService.customPrice)
+          : null;
+
+        // Calculate payment status based on booking_fee and service_fee payments
+        const bookingPayment = serviceRequest.payments?.find(
+          (p) => p.paymentType === "booking_fee"
+        );
+        const servicePayment = serviceRequest.payments?.find(
+          (p) => p.paymentType === "service_fee"
+        );
+
+        let paymentStatus = "unpaid";
+        if (bookingPayment && bookingPayment.status === "completed") {
+          if (servicePayment && servicePayment.status === "completed") {
+            paymentStatus = "paid"; // Both payments completed
+          } else {
+            paymentStatus = "token-paid"; // Only booking fee paid
+          }
+        }
+
         consultation = {
           id: serviceRequest.id,
           caName: serviceRequest.ca?.name || "CA Name",
@@ -124,13 +164,13 @@ class ConsultationService {
           type: "video", // Default consultation type
           purpose: serviceRequest.purpose,
           status: serviceRequest.status,
-          paymentStatus:
-            serviceRequest.payments?.length > 0
-              ? serviceRequest.payments[0].status
-              : "unpaid",
+          paymentStatus: paymentStatus,
           durationMinutes: 30, // Default duration
           experienceLevel: serviceRequest.caService?.experienceLevel,
           currency: serviceRequest?.caService?.currency || "INR",
+          // Service price from CAService.customPrice
+          servicePrice: servicePrice, // The base service price from CAService.customPrice
+          price: servicePrice, // For backward compatibility
           notes: serviceRequest.additionalNotes,
           progress: this.calculateProgress(serviceRequest.status),
           createdAt: serviceRequest.createdAt,

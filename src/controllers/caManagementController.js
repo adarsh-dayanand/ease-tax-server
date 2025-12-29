@@ -4,39 +4,6 @@ const logger = require("../config/logger");
 
 class CAManagementController {
   /**
-   * Update estimated amount for a service request (CA only)
-   * PATCH /ca-mgmt/requests/:requestId/estimated-amount
-   */
-  async updateEstimatedAmount(req, res) {
-    try {
-      const { requestId } = req.params;
-      const caId = req.user.id;
-      const { estimatedAmount } = req.body;
-      if (!estimatedAmount) {
-        return res.status(400).json({
-          success: false,
-          message: "estimatedAmount is required",
-        });
-      }
-      const result = await caManagementService.updateEstimatedAmount(
-        requestId,
-        caId,
-        estimatedAmount
-      );
-      res.json({
-        success: true,
-        data: result,
-        message: "Estimated amount updated successfully",
-      });
-    } catch (error) {
-      logger.error("Error in updateEstimatedAmount:", error);
-      res.status(400).json({
-        success: false,
-        message: error.message || "Failed to update estimated amount",
-      });
-    }
-  }
-  /**
    * Get CA dashboard data
    * GET /ca-mgmt/dashboard
    */
@@ -160,20 +127,9 @@ class CAManagementController {
     try {
       const { requestId } = req.params;
       const caId = req.user.id;
-      const { scheduledDate, scheduledTime, estimatedAmount, notes } = req.body;
-
-      if (!scheduledDate || !scheduledTime || !estimatedAmount) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "scheduledDate, scheduledTime, and estimatedAmount are required",
-        });
-      }
+      const { notes } = req.body;
 
       const result = await caManagementService.acceptRequest(requestId, caId, {
-        scheduledDate,
-        scheduledTime,
-        estimatedAmount,
         notes,
       });
 

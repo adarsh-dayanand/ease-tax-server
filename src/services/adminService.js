@@ -482,10 +482,6 @@ class AdminService {
         purpose: req.purpose,
         status: req.status,
         priority: req.priority,
-        estimatedAmount: req.estimatedAmount,
-        finalAmount: req.finalAmount,
-        scheduledDate: req.scheduledDate,
-        scheduledTime: req.scheduledTime,
         deadline: req.deadline,
         createdAt: req.createdAt,
       }));

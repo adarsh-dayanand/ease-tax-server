@@ -37,6 +37,11 @@ router.get(
   rateLimit.apiRateLimit,
   paymentController.getPaymentStatus
 );
+router.post(
+  "/:paymentId/verify",
+  rateLimit.strictRateLimit,
+  paymentController.verifyPayment
+);
 router.get(
   "/history",
   rateLimit.apiRateLimit,

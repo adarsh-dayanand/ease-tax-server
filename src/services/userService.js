@@ -55,7 +55,7 @@ class UserService {
               status: sr.status,
               ca: sr.ca?.name || "Pending CA Assignment",
               filedDate: sr.completedAt || sr.updatedAt,
-              refundAmount: sr.finalAmount ? `₹${sr.finalAmount}` : "TBD",
+              refundAmount: "TBD",
             })) || [],
         };
 

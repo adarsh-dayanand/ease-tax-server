@@ -65,7 +65,9 @@ class PaymentController {
       const paymentStatus = await paymentService.getPaymentStatus(paymentId);
 
       // Check if user has access to this payment
-      if (paymentStatus.userId !== userId && req.user.role !== "admin") {
+      const { Payment } = require("../../models");
+      const payment = await Payment.findByPk(paymentId);
+      if (payment && payment.payerId !== userId && req.user.role !== "admin") {
         return res.status(403).json({
           success: false,
           message: "Access denied",
@@ -89,6 +91,45 @@ class PaymentController {
       res.status(500).json({
         success: false,
         message: "Internal server error",
+      });
+    }
+  }
+
+  /**
+   * Verify payment after Razorpay checkout
+   * POST /payments/:paymentId/verify
+   */
+  async verifyPayment(req, res) {
+    try {
+      const { paymentId } = req.params;
+      const userId = req.user.id;
+      const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+
+      if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+        return res.status(400).json({
+          success: false,
+          message: "Payment verification data is required",
+        });
+      }
+
+      const verificationResult = await paymentService.verifyPayment(
+        paymentId,
+        userId,
+        razorpay_order_id,
+        razorpay_payment_id,
+        razorpay_signature
+      );
+
+      res.json({
+        success: true,
+        data: verificationResult,
+        message: "Payment verified successfully",
+      });
+    } catch (error) {
+      logger.error("Error in verifyPayment:", error);
+      res.status(400).json({
+        success: false,
+        message: error.message || "Payment verification failed",
       });
     }
   }

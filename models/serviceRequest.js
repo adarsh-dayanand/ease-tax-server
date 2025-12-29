@@ -54,22 +54,6 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.TEXT,
         allowNull: true,
       },
-      scheduledDate: {
-        type: DataTypes.DATE,
-        allowNull: true,
-      },
-      scheduledTime: {
-        type: DataTypes.TIME,
-        allowNull: true,
-      },
-      estimatedAmount: {
-        type: DataTypes.DECIMAL(10, 2),
-        allowNull: true,
-      },
-      finalAmount: {
-        type: DataTypes.DECIMAL(10, 2),
-        allowNull: true,
-      },
       cancellationReason: {
         type: DataTypes.TEXT,
         allowNull: true,

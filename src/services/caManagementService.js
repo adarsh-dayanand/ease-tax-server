@@ -15,29 +15,6 @@ const caService = require("./caService");
 
 class CAManagementService {
   /**
-   * Update estimated amount for a service request (CA only)
-   */
-  async updateEstimatedAmount(requestId, caId, estimatedAmount) {
-    try {
-      const request = await ServiceRequest.findOne({
-        where: { id: requestId, caId },
-      });
-      if (!request) {
-        throw new Error("Service request not found or access denied");
-      }
-      await request.update({ estimatedAmount });
-      await this.clearCACache(caId);
-      return {
-        id: request.id,
-        estimatedAmount: request.estimatedAmount,
-        status: request.status,
-      };
-    } catch (error) {
-      logger.error("Error updating estimated amount:", error);
-      throw error;
-    }
-  }
-  /**
    * Get CA dashboard data
    */
   async getCADashboard(caId) {
@@ -52,7 +29,7 @@ class CAManagementService {
           pendingRequests,
           acceptedRequests,
           completedRequests,
-          totalEarnings,
+          paymentsForEarnings,
           avgRating,
           ca,
         ] = await Promise.all([
@@ -66,12 +43,21 @@ class CAManagementService {
           ServiceRequest.count({
             where: { caId, status: "completed" },
           }),
-          Payment.sum("netAmount", {
+          Payment.findAll({
             where: {
               payeeId: caId,
               status: "completed",
               paymentType: "service_fee",
             },
+            attributes: [
+              "id",
+              "amount",
+              "commissionAmount",
+              "netAmount",
+              "commissionPercentage",
+              "metadata",
+            ],
+            raw: true,
           }),
           this.getCAAvgRating(caId),
           CA.findByPk(caId, {
@@ -84,6 +70,64 @@ class CAManagementService {
             ],
           }),
         ]);
+
+        // Calculate total earnings from payments
+        // IMPORTANT: Commission should be calculated on FULL SERVICE PRICE (totalAmount), not on (servicePrice - bookingFee)
+        // The payment.amount is (servicePrice - bookingFee) + GST
+        // But commission is calculated on the full servicePrice
+        const caCommissionPercentage =
+          parseFloat(ca?.commissionPercentage) || 8.0;
+        const bookingFee = 999;
+        const totalEarnings = paymentsForEarnings.reduce((sum, payment) => {
+          const amount = parseFloat(payment.amount) || 0; // This is (servicePrice - bookingFee) + GST
+
+          // Extract service price (totalAmount) from metadata
+          let servicePrice = null;
+          if (payment.metadata) {
+            try {
+              const metadata =
+                typeof payment.metadata === "string"
+                  ? JSON.parse(payment.metadata)
+                  : payment.metadata;
+
+              if (metadata.totalAmount) {
+                servicePrice = parseFloat(metadata.totalAmount) || 0;
+              }
+            } catch (e) {
+              logger.warn("Failed to parse payment metadata", {
+                paymentId: payment.id,
+                error: e.message,
+              });
+            }
+          }
+
+          // If servicePrice not found in metadata, calculate it from amount
+          // amount = (servicePrice - bookingFee) + GST
+          // amount = (servicePrice - 999) * 1.18
+          // So: servicePrice = (amount / 1.18) + 999
+          if (!servicePrice || servicePrice <= 0) {
+            const baseFinalAmount = amount / 1.18; // Remove GST to get (servicePrice - bookingFee)
+            servicePrice = baseFinalAmount + bookingFee;
+          }
+
+          // Calculate net amount correctly: servicePrice - commission on servicePrice
+          // Commission should be calculated on full servicePrice, not on (servicePrice - bookingFee)
+          const paymentCommissionPercentage =
+            parseFloat(payment.commissionPercentage) || caCommissionPercentage;
+          const commission = (servicePrice * paymentCommissionPercentage) / 100;
+          const netAmount = servicePrice - commission;
+
+          logger.debug("Earnings calculation", {
+            paymentId: payment.id,
+            amount,
+            servicePrice,
+            commissionPercentage: paymentCommissionPercentage,
+            commission,
+            netAmount,
+          });
+
+          return sum + (parseFloat(netAmount) || 0);
+        }, 0);
 
         // Get recent requests
         const recentRequests = await ServiceRequest.findAll({
@@ -152,7 +196,7 @@ class CAManagementService {
 
       if (status) {
         // Handle comma-separated status values
-        const statusArray = status.split(',').map(s => s.trim());
+        const statusArray = status.split(",").map((s) => s.trim());
         if (statusArray.length > 1) {
           whereClause.status = { [Op.in]: statusArray };
         } else {
@@ -191,7 +235,6 @@ class CAManagementService {
         serviceType: req.serviceType,
         purpose: req.purpose,
         status: req.status,
-        finalAmount: req.finalAmount,
         deadline: req.deadline,
         createdAt: req.createdAt,
         priority: req.priority,
@@ -284,7 +327,6 @@ class CAManagementService {
         purpose: request.purpose,
         additionalNotes: request.additionalNotes,
         status: request.status,
-        finalAmount: request.finalAmount,
         deadline: request.deadline,
         priority: request.priority,
         createdAt: request.createdAt,
@@ -320,8 +362,7 @@ class CAManagementService {
    */
   async acceptRequest(requestId, caId, acceptanceData) {
     try {
-      const { scheduledDate, scheduledTime, estimatedAmount, notes } =
-        acceptanceData;
+      const { notes } = acceptanceData;
 
       const request = await ServiceRequest.findOne({
         where: { id: requestId, status: "pending" },
@@ -342,9 +383,6 @@ class CAManagementService {
       await request.update({
         caId,
         status: "accepted",
-        scheduledDate,
-        scheduledTime,
-        estimatedAmount,
         metadata: {
           ...request.metadata,
           acceptedAt: new Date(),
@@ -359,9 +397,6 @@ class CAManagementService {
       return {
         id: request.id,
         status: request.status,
-        scheduledDate: request.scheduledDate,
-        scheduledTime: request.scheduledTime,
-        estimatedAmount: request.estimatedAmount,
         userId: request.userId,
       };
     } catch (error) {

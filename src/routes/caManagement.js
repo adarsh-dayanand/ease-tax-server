@@ -60,12 +60,6 @@ router.post(
   caManagementController.markRequestComplete
 );
 
-// Update estimated amount for a service request
-router.patch(
-  "/requests/:requestId/estimated-amount",
-  rateLimit.apiRateLimit,
-  caManagementController.updateEstimatedAmount
-);
 
 // Profile management
 router.get(
