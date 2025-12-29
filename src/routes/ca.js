@@ -35,6 +35,7 @@ router.get("/", rateLimit.apiRateLimit, caController.searchCAs);
 // CA profile and details
 router.get("/:caId", rateLimit.apiRateLimit, caController.getCAProfile);
 router.get("/:caId/reviews", rateLimit.apiRateLimit, caController.getCAReviews);
+router.post("/:caId/reviews", rateLimit.apiRateLimit, caController.submitReview);
 // Availability endpoints removed - CAs handle time slots through consultation requests
 
 // Cache management (admin only)

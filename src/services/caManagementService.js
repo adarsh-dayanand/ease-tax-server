@@ -143,6 +143,10 @@ class CAManagementService {
           ],
         });
 
+        // Get rating distribution
+        const ratingDistribution =
+          await caService.getCARatingDistribution(caId);
+
         dashboard = {
           ca: {
             id: ca.id,
@@ -164,6 +168,13 @@ class CAManagementService {
               totalRequests > 0
                 ? ((completedRequests / totalRequests) * 100).toFixed(1)
                 : 0,
+            ratingDistribution: ratingDistribution || [
+              { rating: 5, count: 0 },
+              { rating: 4, count: 0 },
+              { rating: 3, count: 0 },
+              { rating: 2, count: 0 },
+              { rating: 1, count: 0 },
+            ],
           },
           recentRequests: recentRequests.map((req) => ({
             id: req.id,

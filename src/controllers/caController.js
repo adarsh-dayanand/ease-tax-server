@@ -114,6 +114,53 @@ class CAController {
   }
 
   /**
+   * Submit a review for a CA
+   * POST /ca/:caId/reviews
+   */
+  async submitReview(req, res) {
+    try {
+      const { caId } = req.params;
+      const userId = req.user.id; // From auth middleware
+      const { serviceRequestId, rating, comment } = req.body;
+
+      // Validate input
+      if (!serviceRequestId) {
+        return res.status(400).json({
+          success: false,
+          message: "Service request ID is required",
+        });
+      }
+
+      if (!rating || rating < 1 || rating > 5) {
+        return res.status(400).json({
+          success: false,
+          message: "Rating must be between 1 and 5",
+        });
+      }
+
+      const review = await caService.submitReview(
+        userId,
+        caId,
+        serviceRequestId,
+        rating,
+        comment || null
+      );
+
+      res.json({
+        success: true,
+        message: "Review submitted successfully",
+        data: review,
+      });
+    } catch (error) {
+      logger.error("Error in submitReview:", error);
+      res.status(error.message.includes("Unauthorized") ? 403 : 500).json({
+        success: false,
+        message: error.message || "Failed to submit review",
+      });
+    }
+  }
+
+  /**
    * Get popular CAs
    * GET /ca/popular
    */

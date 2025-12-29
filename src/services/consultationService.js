@@ -5,6 +5,7 @@ const {
   Payment,
   CAService,
   Message,
+  Review,
 } = require("../../models");
 const cacheService = require("./cacheService");
 const logger = require("../config/logger");
@@ -157,8 +158,18 @@ class ConsultationService {
           }
         }
 
+        // Check if user has already reviewed this service
+        const existingReview = await Review.findOne({
+          where: {
+            serviceRequestId: serviceRequest.id,
+            userId: serviceRequest.userId,
+            caId: serviceRequest.caId,
+          },
+        });
+
         consultation = {
           id: serviceRequest.id,
+          caId: serviceRequest.caId,
           caName: serviceRequest.ca?.name || "CA Name",
           caImage: serviceRequest.ca?.profileImage,
           type: "video", // Default consultation type
@@ -178,6 +189,7 @@ class ConsultationService {
           meetingLink: serviceRequest.metadata?.meetingLink,
           itrNumber: serviceRequest.metadata?.itrNumber,
           acknowledgmentNumber: serviceRequest.metadata?.acknowledgmentNumber,
+          hasReviewed: !!existingReview,
         };
 
         // Cache for 15 minutes

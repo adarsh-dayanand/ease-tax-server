@@ -10,7 +10,7 @@ const {
 } = require("../../models");
 const cacheService = require("./cacheService");
 const logger = require("../config/logger");
-const { Op } = require("sequelize");
+const { Op, QueryTypes } = require("sequelize");
 
 class CAService {
   /**
@@ -264,8 +264,12 @@ class CAService {
               [sequelize.fn("AVG", sequelize.col("rating")), "avgRating"],
             ],
           });
-          averageRating = reviewStats?.dataValues?.avgRating || 0;
-          totalReviews = reviewStats?.dataValues?.count || 0;
+          // Handle both dataValues and direct properties, and ensure it's a number
+          const avgRatingValue = reviewStats?.dataValues?.avgRating ?? reviewStats?.avgRating ?? null;
+          const countValue = reviewStats?.dataValues?.count ?? reviewStats?.count ?? 0;
+          // Convert to number, handling null/undefined/string cases
+          averageRating = avgRatingValue != null ? parseFloat(avgRatingValue) || 0 : 0;
+          totalReviews = countValue != null ? parseInt(countValue) || 0 : 0;
         } catch (error) {
           logger.warn("Error getting review stats:", error.message);
           averageRating = 0;
@@ -291,7 +295,7 @@ class CAService {
           name: ca?.name,
           specialization: ca?.qualifications?.join(", ") || "Tax Consultant",
           experience: ca?.experienceYears,
-          rating: Number(averageRating.toFixed(1)) || 0,
+          rating: averageRating && typeof averageRating === 'number' && !isNaN(averageRating) ? Number(averageRating.toFixed(1)) : 0,
           reviewCount: totalReviews,
           location: ca?.location,
           profileImage: ca?.profileImage,
@@ -398,6 +402,104 @@ class CAService {
       return reviews;
     } catch (error) {
       logger.error("Error getting CA reviews:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Submit a review for a CA
+   * @param {string} userId - User ID submitting the review
+   * @param {string} caId - CA ID being reviewed
+   * @param {string} serviceRequestId - Service request ID
+   * @param {number} rating - Rating (1-5)
+   * @param {string} review - Review text (optional)
+   * @returns {Promise<Object>} Created review
+   */
+  async submitReview(userId, caId, serviceRequestId, rating, review = null) {
+    try {
+      // Verify the service request exists and belongs to the user
+      const serviceRequest = await ServiceRequest.findByPk(serviceRequestId, {
+        include: [
+          {
+            model: CA,
+            as: "ca",
+            attributes: ["id"],
+          },
+        ],
+      });
+
+      if (!serviceRequest) {
+        throw new Error("Service request not found");
+      }
+
+      if (serviceRequest.userId !== userId) {
+        throw new Error("Unauthorized: Service request does not belong to user");
+      }
+
+      if (serviceRequest.caId !== caId) {
+        throw new Error("CA ID mismatch");
+      }
+
+      // Check if service is completed
+      if (serviceRequest.status !== "completed") {
+        throw new Error("Can only review completed services");
+      }
+
+      // Check if review already exists for this service request
+      const existingReview = await Review.findOne({
+        where: {
+          serviceRequestId,
+          userId,
+          caId,
+        },
+      });
+
+      if (existingReview) {
+        // Update existing review
+        await existingReview.update({
+          rating,
+          review: review || existingReview.review,
+        });
+
+        // Clear cache
+        await cacheService.del(cacheService.getCacheKeys().CA_REVIEWS(caId));
+        await cacheService.del(cacheService.getCacheKeys().CA_PROFILE(caId));
+
+        return {
+          id: existingReview.id,
+          rating: existingReview.rating,
+          review: existingReview.review,
+          createdAt: existingReview.createdAt,
+          updatedAt: existingReview.updatedAt,
+        };
+      }
+
+      // Create new review
+      const newReview = await Review.create({
+        serviceRequestId,
+        caId,
+        userId,
+        rating,
+        review,
+        isVerified: true, // Auto-verify reviews for completed services
+        reviewType: "overall",
+      });
+
+      // Clear cache
+      await cacheService.del(cacheService.getCacheKeys().CA_REVIEWS(caId));
+      await cacheService.del(cacheService.getCacheKeys().CA_PROFILE(caId));
+      await cacheService.del(cacheService.getCacheKeys().CA_RATING_DISTRIBUTION(caId));
+      await cacheService.del(cacheService.getCacheKeys().CA_DASHBOARD(caId));
+
+      return {
+        id: newReview.id,
+        rating: newReview.rating,
+        review: newReview.review,
+        createdAt: newReview.createdAt,
+        updatedAt: newReview.updatedAt,
+      };
+    } catch (error) {
+      logger.error("Error submitting review:", error);
       throw error;
     }
   }
@@ -534,29 +636,82 @@ class CAService {
           { rating: 5, count: 0 },
         ];
 
-        // Get actual rating counts from database
-        const ratingCounts = await Review.findAll({
-          where: { caId },
-          attributes: [
-            "rating",
-            [sequelize.fn("COUNT", sequelize.col("id")), "count"],
-          ],
-          group: ["rating"],
-          raw: true,
-        });
+        // Get actual rating counts from database using raw SQL query
+        // This ensures we get the correct column names
+        const ratingCounts = await sequelize.query(
+          `SELECT rating::integer, COUNT(id)::integer as count 
+           FROM reviews 
+           WHERE "caId" = :caId 
+           GROUP BY rating
+           ORDER BY rating DESC`,
+          {
+            replacements: { caId },
+            type: QueryTypes.SELECT,
+          }
+        );
+
+        // Log raw results for debugging
+        logger.info("Rating counts raw results", { ratingCounts, caId, ratingCountsLength: ratingCounts?.length });
 
         // Update the distribution with actual counts
-        ratingCounts.forEach((item) => {
-          const rating = parseInt(item.rating);
-          const count = parseInt(item.count);
-          if (rating > 0 && rating <= 5) {
-            ratingDistribution[rating].count = count;
-          }
-        });
+        if (ratingCounts && Array.isArray(ratingCounts)) {
+          ratingCounts.forEach((item) => {
+            // Ensure rating is parsed as integer and count as integer
+            const rating = item.rating != null ? parseInt(String(item.rating), 10) : null;
+            const count = item.count != null ? parseInt(String(item.count), 10) : null;
+            
+            logger.debug("Processing rating item", { 
+              rawItem: item, 
+              rating, 
+              count, 
+              ratingType: typeof rating,
+              countType: typeof count 
+            });
+            
+            if (rating != null && count != null && !isNaN(rating) && !isNaN(count) && rating >= 1 && rating <= 5) {
+              // Find the correct element in the array - ensure both are numbers
+              const distributionItem = ratingDistribution.find((dist) => Number(dist.rating) === Number(rating));
+              if (distributionItem) {
+                distributionItem.count = count;
+                logger.debug(`Updated rating ${rating} with count ${count}`, { distributionItem });
+              } else {
+                logger.error("Could not find distribution item for rating", { 
+                  rating, 
+                  ratingDistribution,
+                  ratingDistributionTypes: ratingDistribution.map(d => ({ rating: d.rating, type: typeof d.rating }))
+                });
+              }
+            } else {
+              logger.warn("Invalid rating data", { item, rating, count });
+            }
+          });
+        } else {
+          logger.warn("Rating counts is not an array", { ratingCounts, type: typeof ratingCounts });
+        }
+        
+        logger.debug("Final rating distribution", { ratingDistribution });
 
         // Cache for 30 minutes
         await cacheService.set(cacheKey, ratingDistribution, 1800);
       }
+
+      // Ensure we always return a valid rating distribution array
+      if (!ratingDistribution || !Array.isArray(ratingDistribution)) {
+        logger.warn("Invalid rating distribution from cache, reinitializing", { ratingDistribution });
+        ratingDistribution = [
+          { rating: 1, count: 0 },
+          { rating: 2, count: 0 },
+          { rating: 3, count: 0 },
+          { rating: 4, count: 0 },
+          { rating: 5, count: 0 },
+        ];
+      }
+
+      // Ensure all ratings are numbers
+      ratingDistribution = ratingDistribution.map((item) => ({
+        rating: Number(item.rating),
+        count: Number(item.count) || 0,
+      }));
 
       return ratingDistribution;
     } catch (error) {
