@@ -24,6 +24,11 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
       unique: true,
     },
+    countryCode: {
+      type: DataTypes.STRING(10),
+      allowNull: true,
+      comment: "Country code for phone number (e.g., +91 for India)",
+    },
     location: {
       type: DataTypes.STRING,
       allowNull: true,
@@ -37,6 +42,11 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: false,
     },
     googleUid: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      unique: true,
+    },
+    phoneUid: {
       type: DataTypes.STRING,
       allowNull: true,
       unique: true,

@@ -42,16 +42,32 @@ const authenticateToken = async (req, res, next) => {
       });
 
       // Check if user exists in our database - be explicit about type
-      // First try by googleUid, then by email as fallback
+      // First try by googleUid (for Google auth), then phoneUid (for phone auth), then by email as fallback
       let user = await User.findOne({ where: { googleUid: uid } });
       
-      // If not found by googleUid, try by email (for users who signed up before googleUid was set)
+      // If not found by googleUid, try by phoneUid (for phone authentication)
+      if (!user) {
+        user = await User.findOne({ where: { phoneUid: uid } });
+        // If found by phoneUid but phoneUid is missing or different, update it
+        if (user && user.phoneUid !== uid) {
+          await user.update({ phoneUid: uid });
+          logger.info("Updated user with phoneUid", { userId: user.id, uid });
+        }
+      }
+      
+      // If still not found, try by email (for users who signed up before googleUid/phoneUid was set)
       if (!user && email) {
         user = await User.findOne({ where: { email: email.toLowerCase().trim() } });
-        // If found by email but googleUid is missing, update it
-        if (user && !user.googleUid) {
-          await user.update({ googleUid: uid });
-          logger.info("Updated user with googleUid", { userId: user.id, email });
+        // If found by email, update the appropriate UID field based on auth provider
+        if (user) {
+          const provider = firebaseResult.data.firebase?.sign_in_provider;
+          if (provider === "phone" && !user.phoneUid) {
+            await user.update({ phoneUid: uid });
+            logger.info("Updated user with phoneUid from email lookup", { userId: user.id, email });
+          } else if ((provider === "google.com" || !provider) && !user.googleUid) {
+            await user.update({ googleUid: uid });
+            logger.info("Updated user with googleUid from email lookup", { userId: user.id, email });
+          }
         }
       }
       
@@ -60,11 +76,29 @@ const authenticateToken = async (req, res, next) => {
       if (!user) {
         // Check if it's a CA - but only if they have a pre-existing CA record
         user = await CA.findOne({ where: { googleUid: uid } });
+        
+        // If not found by googleUid, try by phoneUid (for phone authentication)
+        if (!user) {
+          user = await CA.findOne({ where: { phoneUid: uid } });
+          // If found by phoneUid but phoneUid is missing or different, update it
+          if (user && user.phoneUid !== uid) {
+            await user.update({ phoneUid: uid });
+            logger.info("Updated CA with phoneUid", { caId: user.id, uid });
+          }
+        }
+        
+        // If still not found, try by email
         if (!user && email) {
           user = await CA.findOne({ where: { email: email.toLowerCase().trim() } });
-          if (user && !user.googleUid) {
-            await user.update({ googleUid: uid });
-            logger.info("Updated CA with googleUid", { caId: user.id, email });
+          if (user) {
+            const provider = firebaseResult.data.firebase?.sign_in_provider;
+            if (provider === "phone" && !user.phoneUid) {
+              await user.update({ phoneUid: uid });
+              logger.info("Updated CA with phoneUid from email lookup", { caId: user.id, email });
+            } else if ((provider === "google.com" || !provider) && !user.googleUid) {
+              await user.update({ googleUid: uid });
+              logger.info("Updated CA with googleUid from email lookup", { caId: user.id, email });
+            }
           }
         }
         
@@ -433,11 +467,18 @@ const optionalAuth = async (req, res, next) => {
 
     if (firebaseResult.success) {
       const { uid } = firebaseResult.data;
+      // Try googleUid first, then phoneUid
       let user = await User.findOne({ where: { googleUid: uid } });
+      if (!user) {
+        user = await User.findOne({ where: { phoneUid: uid } });
+      }
       let userType = "user";
 
       if (!user) {
         user = await CA.findOne({ where: { googleUid: uid } });
+        if (!user) {
+          user = await CA.findOne({ where: { phoneUid: uid } });
+        }
         if (user) {
           userType = "ca";
           // Only allow verified CAs in optional auth

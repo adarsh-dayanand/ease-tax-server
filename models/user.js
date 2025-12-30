@@ -24,6 +24,11 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true,
       unique: true,
     },
+    countryCode: {
+      type: DataTypes.STRING(10),
+      allowNull: true,
+      comment: "Country code for phone number (e.g., +91 for India)",
+    },
     pan: {
       type: DataTypes.STRING,
       allowNull: true,
@@ -41,6 +46,11 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true,
     },
     googleUid: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      unique: true,
+    },
+    phoneUid: {
       type: DataTypes.STRING,
       allowNull: true,
       unique: true,

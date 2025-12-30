@@ -118,26 +118,87 @@ exports.phoneLogin = async (req, res) => {
     const decodedToken = verificationResult.data;
     const { phone_number, uid } = decodedToken;
 
+    if (!phone_number) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: "MISSING_PHONE",
+          message: "Phone number not found in token",
+        },
+      });
+    }
+
+    // Normalize phone number
+    const normalizedPhone = phone_number.startsWith("+")
+      ? phone_number
+      : `+${phone_number}`;
+
+    logger.info("CA phone auth attempt", {
+      phone: normalizedPhone,
+      uid,
+    });
+
     // Find CA by phone
-    let ca = await CA.findOne({ where: { phone: phone_number } });
+    let ca = await CA.findOne({ where: { phone: normalizedPhone } });
+
+    // If not found by phone, try by phoneUid (for account linking)
+    if (!ca) {
+      ca = await CA.findOne({ where: { phoneUid: uid } });
+    }
+
+    // If still not found, try by googleUid (user logged in with Google first, now trying phone)
+    if (!ca) {
+      // Try to find by email if available in token (for account linking)
+      const emailFromToken = decodedToken.email;
+      if (emailFromToken) {
+        const normalizedEmail = emailFromToken.trim().toLowerCase();
+        ca = await CA.findOne({ where: { email: normalizedEmail } });
+        
+        // If found by email, link the phone number and phoneUid
+        if (ca) {
+          logger.info("Linking phone to existing CA Google account", {
+            caId: ca.id,
+            email: ca.email,
+            phone: normalizedPhone,
+          });
+          
+          await ca.update({
+            phone: normalizedPhone,
+            phoneUid: uid,
+            phoneVerified: true,
+            lastLogin: new Date(),
+          });
+        }
+      }
+    }
+
     if (!ca) {
       return res.status(404).json({
         success: false,
         error: {
           code: "CA_NOT_FOUND",
           message:
-            "CA not found with this phone number. Please register first.",
+            "CA not found with this phone number. Please contact admin for registration.",
         },
       });
     }
 
-    // Update last login and phone verification
-    await ca.update({
+    // Update last login, phone verification, and phoneUid if not set
+    const updateData = {
       lastLogin: new Date(),
       phoneVerified: true,
-    });
+    };
 
-    logger.info(`CA logged in via phone: ${phone_number}`, { caId: ca.id });
+    if (!ca.phoneUid) {
+      updateData.phoneUid = uid;
+    }
+    if (!ca.phone) {
+      updateData.phone = normalizedPhone;
+    }
+
+    await ca.update(updateData);
+
+    logger.info(`CA logged in via phone: ${normalizedPhone}`, { caId: ca.id });
 
     // Return CA data
     const caData = {
@@ -157,6 +218,8 @@ exports.phoneLogin = async (req, res) => {
       success: true,
       data: {
         ca: caData,
+        isNewCA: !ca.phone,
+        requiresVerification: !ca.verified,
       },
     });
   } catch (err) {
@@ -164,6 +227,16 @@ exports.phoneLogin = async (req, res) => {
       error: err.message,
       stack: err.stack,
     });
+
+    if (err.code === "auth/id-token-expired") {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: "TOKEN_EXPIRED",
+          message: "Firebase token has expired",
+        },
+      });
+    }
 
     return res.status(401).json({
       success: false,

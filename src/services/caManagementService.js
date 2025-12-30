@@ -5,7 +5,6 @@ const {
   Payment,
   Document,
   Meeting,
-  CASpecialization,
 } = require("../../models");
 const cacheService = require("./cacheService");
 const vcSchedulingService = require("./vcSchedulingService");
@@ -580,14 +579,7 @@ class CAManagementService {
    */
   async getCAProfile(caId) {
     try {
-      const ca = await CA.findByPk(caId, {
-        include: [
-          {
-            model: CASpecialization,
-            as: "specializations",
-          },
-        ],
-      });
+      const ca = await CA.findByPk(caId);
 
       if (!ca) {
         throw new Error("CA not found");
@@ -598,12 +590,12 @@ class CAManagementService {
         name: ca.name,
         email: ca.email,
         phone: ca.phone,
+        countryCode: ca.countryCode || null,
         location: ca.location,
         image: ca.image,
         verified: ca.verified,
         completedFilings: ca?.completedFilings,
         phoneVerified: ca?.phoneVerified,
-        specializations: ca?.specializations,
       };
     } catch (error) {
       logger.error("Error getting CA profile:", error);
@@ -621,7 +613,7 @@ class CAManagementService {
         throw new Error("CA not found");
       }
 
-      const allowedFields = ["name", "phone", "location", "image"];
+      const allowedFields = ["name", "phone", "countryCode", "location", "image"];
 
       const filteredData = {};
       allowedFields.forEach((field) => {

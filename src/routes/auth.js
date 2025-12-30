@@ -42,6 +42,15 @@ router.post(
   authController.googleLoginOrRegister
 );
 
+// User Phone Auth endpoints
+router.post(
+  "/user/phone",
+  rateLimit.authRateLimit,
+  securityHeaders,
+  sanitizeInput,
+  authController.phoneLoginOrRegister
+);
+
 // CA Auth endpoints
 router.post(
   "/ca/google",

@@ -44,6 +44,7 @@ class UserService {
           email: userProfile.email,
           profileImage: userProfile.profileImage, // actual field name is profileImage
           phone: userProfile.phone,
+          countryCode: userProfile.countryCode || null,
           role: "user", // Users are always 'user' role
           pan: userProfile.pan,
           gstin: userProfile.gstin,

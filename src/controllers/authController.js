@@ -1,5 +1,6 @@
 const firebaseConfig = require("../config/firebase");
 const { User, CA, Admin } = require("../../models");
+const { Op } = require("sequelize");
 const logger = require("../config/logger");
 
 exports.googleLoginOrRegister = async (req, res) => {
@@ -446,6 +447,296 @@ exports.refreshFirebaseToken = async (req, res) => {
   }
 };
 
+/**
+ * Phone authentication for users
+ * Handles both new user creation and existing user login
+ * Also handles account linking (if user logged in with Google before)
+ */
+exports.phoneLoginOrRegister = async (req, res) => {
+  try {
+    const { idToken, name, email } = req.body; // name and email optional for profile completion
+    if (!idToken) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: "MISSING_ID_TOKEN",
+          message: "Firebase ID token is required",
+        },
+      });
+    }
+
+    // Verify phone auth token
+    const verificationResult = await firebaseConfig.verifyIdToken(idToken);
+    if (!verificationResult.success) {
+      throw new Error(verificationResult.error);
+    }
+    const decodedToken = verificationResult.data;
+    const { phone_number, uid } = decodedToken;
+
+    if (!phone_number) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: "MISSING_PHONE",
+          message: "Phone number not found in token",
+        },
+      });
+    }
+
+    logger.info("Phone auth attempt", {
+      phone: phone_number,
+      uid,
+      hasName: !!name,
+      hasEmail: !!email,
+    });
+
+    // Normalize phone number (remove spaces, ensure + prefix)
+    const normalizedPhone = phone_number.startsWith("+")
+      ? phone_number
+      : `+${phone_number}`;
+
+    // Extract just the digits for flexible matching
+    const phoneDigits = normalizedPhone.replace(/\D/g, "");
+    // Extract last 10 digits (assuming Indian numbers)
+    const last10Digits = phoneDigits.slice(-10);
+
+    // Build array of possible phone formats to search
+    const phoneFormats = [normalizedPhone];
+    if (last10Digits.length === 10) {
+      phoneFormats.push(last10Digits); // Just 10 digits
+      // Try common country codes if last 10 digits found
+      // Note: This is a fallback for phone lookup, actual country code should come from user selection
+      phoneFormats.push(`+91${last10Digits}`); // India (+91)
+      phoneFormats.push(`+1${last10Digits}`); // US/Canada (+1)
+      phoneFormats.push(`91${last10Digits}`); // 91 prefix without +
+    }
+
+    // Try to find user by phone number - search multiple formats
+    let userRecord = null;
+    
+    // First try by phoneUid (most reliable)
+    userRecord = await User.findOne({ where: { phoneUid: uid } });
+    
+    // If not found, try each phone format
+    if (!userRecord && phoneFormats.length > 0) {
+      for (const phoneFormat of phoneFormats) {
+        userRecord = await User.findOne({ where: { phone: phoneFormat } });
+        if (userRecord) {
+          logger.info("Found user by phone format", { phoneFormat, userId: userRecord.id });
+          break;
+        }
+      }
+    }
+
+    logger.info("Phone lookup attempt", {
+      normalizedPhone,
+      last10Digits,
+      phoneFormats,
+      found: !!userRecord,
+      userId: userRecord?.id,
+    });
+
+    // If still not found and user has Google account, try to link by checking if phone matches
+    // This handles the case where user logged in with Google first, then tries phone
+    if (!userRecord && email) {
+      const normalizedEmail = email.trim().toLowerCase();
+      userRecord = await User.findOne({ where: { email: normalizedEmail } });
+      
+      // If found by email, link the phone number and phoneUid
+      if (userRecord) {
+        logger.info("Linking phone to existing Google account", {
+          userId: userRecord.id,
+          email: userRecord.email,
+          phone: normalizedPhone,
+        });
+        
+        await userRecord.update({
+          phone: normalizedPhone,
+          phoneUid: uid,
+          phoneVerified: true,
+          lastLogin: new Date(),
+        });
+      }
+    }
+
+    // If user not found, create new user (requires name and email)
+    if (!userRecord) {
+      if (!name || !email) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: "PROFILE_INCOMPLETE",
+            message: "Name and email are required for new user registration",
+            requiresProfileCompletion: true,
+          },
+        });
+      }
+
+      const normalizedEmail = email.trim().toLowerCase();
+      
+      // Check if email already exists
+      const existingUserByEmail = await User.findOne({
+        where: { email: normalizedEmail },
+      });
+      
+      if (existingUserByEmail) {
+        return res.status(409).json({
+          success: false,
+          error: {
+            code: "EMAIL_EXISTS",
+            message: "An account with this email already exists. Please login with Google or use a different email.",
+          },
+        });
+      }
+
+      logger.info("Creating new user via phone auth", {
+        phone: normalizedPhone,
+        email: normalizedEmail,
+        name,
+      });
+
+      try {
+        userRecord = await User.create({
+          phone: normalizedPhone,
+          phoneUid: uid,
+          email: normalizedEmail,
+          name: name.trim(),
+          phoneVerified: true,
+          lastLogin: new Date(),
+          status: "active",
+        });
+
+        logger.info("New user created via phone", {
+          userId: userRecord.id,
+          phone: normalizedPhone,
+          email: normalizedEmail,
+        });
+      } catch (createError) {
+        logger.error("Failed to create user via phone", {
+          error: createError.message,
+          phone: normalizedPhone,
+        });
+
+        if (createError.name === "SequelizeUniqueConstraintError") {
+          // Try to find existing user
+          userRecord = await User.findOne({
+            where: { phone: normalizedPhone },
+          });
+          if (!userRecord) {
+            userRecord = await User.findOne({ where: { phoneUid: uid } });
+          }
+          if (userRecord) {
+            logger.info("Found existing user after constraint error");
+          } else {
+            throw createError;
+          }
+        } else {
+          throw createError;
+        }
+      }
+    } else {
+      // Existing user - update phoneUid if not set, and update last login
+      const updateData = {
+        lastLogin: new Date(),
+        phoneVerified: true,
+      };
+
+      if (!userRecord.phoneUid) {
+        updateData.phoneUid = uid;
+      }
+      
+      // Update phone number if it's different (normalize to include country code)
+      // If stored phone doesn't match normalized format, update it
+      const storedPhone = userRecord.phone || "";
+      const storedPhoneDigits = storedPhone.replace(/\D/g, "");
+      const normalizedPhoneDigits = normalizedPhone.replace(/\D/g, "");
+      
+      // If phones don't match (different formats), update to normalized format
+      if (storedPhoneDigits !== normalizedPhoneDigits || !storedPhone.startsWith("+")) {
+        updateData.phone = normalizedPhone;
+      }
+      
+      // If profile is incomplete (missing name or email), update if provided
+      if (name && !userRecord.name) {
+        updateData.name = name.trim();
+      }
+      if (email && !userRecord.email) {
+        const normalizedEmail = email.trim().toLowerCase();
+        // Check if email is already taken by another user
+        const emailExists = await User.findOne({
+          where: { email: normalizedEmail },
+        });
+        if (!emailExists || emailExists.id === userRecord.id) {
+          updateData.email = normalizedEmail;
+        }
+      }
+
+      await userRecord.update(updateData);
+      logger.info("User logged in via phone", {
+        userId: userRecord.id,
+        phone: normalizedPhone,
+        hadPhone: !!userRecord.phone,
+        phoneUpdated: !!updateData.phone,
+      });
+    }
+
+    // Reload user to get latest data
+    userRecord = await User.findByPk(userRecord.id);
+    if (!userRecord) {
+      throw new Error("User not found after creation/update");
+    }
+
+    // Check if profile is complete
+    const isProfileComplete = userRecord.name && userRecord.email;
+    const requiresProfileCompletion = !isProfileComplete;
+
+    // Return user data
+    const responseData = {
+      id: userRecord.id,
+      name: userRecord.name,
+      email: userRecord.email,
+      phone: userRecord.phone,
+      profileImage: userRecord.profileImage,
+      pan: userRecord.pan,
+      gstin: userRecord.gstin,
+      phoneVerified: userRecord.phoneVerified,
+      lastLogin: userRecord.lastLogin,
+    };
+
+    return res.json({
+      success: true,
+      data: {
+        user: responseData,
+        isNewUser: !userRecord.phone || !userRecord.email,
+        requiresProfileCompletion,
+      },
+    });
+  } catch (err) {
+    logger.error("Phone login/register failed", {
+      error: err.message,
+      stack: err.stack,
+    });
+
+    if (err.code === "auth/id-token-expired") {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: "TOKEN_EXPIRED",
+          message: "Firebase token has expired",
+        },
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: err.message || "Failed to authenticate via phone",
+      },
+    });
+  }
+};
+
 exports.getProfileByIdToken = async (req, res) => {
   try {
     const email = req.user.email;
@@ -489,6 +780,7 @@ exports.getProfileByIdToken = async (req, res) => {
       email: userRecord?.email,
       name: userRecord?.name,
       phone: userRecord?.phone,
+      countryCode: userRecord?.countryCode || null,
       profileImage: userRecord?.profileImage,
       pan: userRecord?.pan,
       gstin: userRecord?.gstin,
