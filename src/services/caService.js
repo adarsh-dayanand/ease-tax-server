@@ -256,24 +256,27 @@ class CAService {
         let averageRating = 0;
         let totalReviews = 0;
         try {
-          const reviewStats = await Review.findOne({
+          // Get total count of reviews
+          totalReviews = await Review.count({
             where: { caId },
-            attributes: [
-              [sequelize.fn("COUNT", sequelize.col("id")), "count"],
-              [sequelize.fn("AVG", sequelize.col("rating")), "avgRating"],
-            ],
           });
-          // Handle both dataValues and direct properties, and ensure it's a number
-          const avgRatingValue =
-            reviewStats?.dataValues?.avgRating ??
-            reviewStats?.avgRating ??
-            null;
-          const countValue =
-            reviewStats?.dataValues?.count ?? reviewStats?.count ?? 0;
-          // Convert to number, handling null/undefined/string cases
-          averageRating =
-            avgRatingValue != null ? parseFloat(avgRatingValue) || 0 : 0;
-          totalReviews = countValue != null ? parseInt(countValue) || 0 : 0;
+
+          // Calculate average rating if there are reviews
+          if (totalReviews > 0) {
+            const ratingResult = await Review.findAll({
+              where: { caId },
+              attributes: [
+                [sequelize.fn("AVG", sequelize.col("rating")), "avgRating"],
+              ],
+              raw: true,
+            });
+
+            if (ratingResult && ratingResult.length > 0) {
+              const avgRatingValue = ratingResult[0]?.avgRating;
+              averageRating =
+                avgRatingValue != null ? parseFloat(avgRatingValue) || 0 : 0;
+            }
+          }
         } catch (error) {
           logger.warn("Error getting review stats:", error.message);
           averageRating = 0;
