@@ -117,27 +117,55 @@ class UserService {
               as: "ca",
               attributes: ["id", "name", "profileImage", "location"],
             },
-            { model: require("../../models").CAService, as: "caService" },
+            {
+              model: require("../../models").CAService,
+              as: "caService",
+              attributes: [
+                "id",
+                "customPrice",
+                "currency",
+                "experienceLevel",
+              ],
+            },
+            {
+              model: require("../../models").Payment,
+              as: "payments",
+              attributes: [
+                "id",
+                "amount",
+                "status",
+                "paymentType",
+              ],
+            },
           ],
         });
 
         consultations = {
-          data: rows.map((sr) => ({
-            id: sr.id,
-            caName: sr.ca?.name || "Pending CA Assignment",
-            caImage: sr.ca?.profileImage,
-            type: "video", // Default consultation type
-            purpose: sr.purpose,
-            status: sr.status,
-            paymentStatus: this.getPaymentStatus(sr.payments),
-            durationMinutes: 30, // Default duration
-            experienceLevel: sr.caService?.experienceLevel,
-            currency: sr?.caService?.currency || "INR",
-            notes: sr.additionalNotes,
-            progress: this.calculateProgress(sr.status),
-            createdAt: sr.createdAt,
-            updatedAt: sr.updatedAt,
-          })),
+          data: rows.map((sr) => {
+            // Get base service price from CAService.customPrice (CA's price for this service)
+            const servicePrice = sr.caService?.customPrice
+              ? parseFloat(sr.caService.customPrice)
+              : null;
+
+            return {
+              id: sr.id,
+              caName: sr.ca?.name || "Pending CA Assignment",
+              caImage: sr.ca?.profileImage,
+              type: "video", // Default consultation type
+              purpose: sr.purpose,
+              status: sr.status,
+              paymentStatus: this.getPaymentStatus(sr.payments),
+              durationMinutes: 30, // Default duration
+              experienceLevel: sr.caService?.experienceLevel,
+              currency: sr?.caService?.currency || "INR",
+              servicePrice: servicePrice, // The base service price from CAService.customPrice
+              price: servicePrice, // For backward compatibility
+              notes: sr.additionalNotes,
+              progress: this.calculateProgress(sr.status),
+              createdAt: sr.createdAt,
+              updatedAt: sr.updatedAt,
+            };
+          }),
           pagination: {
             page,
             limit,
