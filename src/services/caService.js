@@ -174,7 +174,6 @@ class CAService {
     try {
       const cacheKey = cacheService.getCacheKeys().CA_PROFILE(caId);
       let caProfile = await cacheService.get(cacheKey);
-
       if (!caProfile) {
         const ca = await CA.findOne({
           where: { id: caId },
@@ -265,10 +264,15 @@ class CAService {
             ],
           });
           // Handle both dataValues and direct properties, and ensure it's a number
-          const avgRatingValue = reviewStats?.dataValues?.avgRating ?? reviewStats?.avgRating ?? null;
-          const countValue = reviewStats?.dataValues?.count ?? reviewStats?.count ?? 0;
+          const avgRatingValue =
+            reviewStats?.dataValues?.avgRating ??
+            reviewStats?.avgRating ??
+            null;
+          const countValue =
+            reviewStats?.dataValues?.count ?? reviewStats?.count ?? 0;
           // Convert to number, handling null/undefined/string cases
-          averageRating = avgRatingValue != null ? parseFloat(avgRatingValue) || 0 : 0;
+          averageRating =
+            avgRatingValue != null ? parseFloat(avgRatingValue) || 0 : 0;
           totalReviews = countValue != null ? parseInt(countValue) || 0 : 0;
         } catch (error) {
           logger.warn("Error getting review stats:", error.message);
@@ -295,7 +299,12 @@ class CAService {
           name: ca?.name,
           specialization: ca?.qualifications?.join(", ") || "Tax Consultant",
           experience: ca?.experienceYears,
-          rating: averageRating && typeof averageRating === 'number' && !isNaN(averageRating) ? Number(averageRating.toFixed(1)) : 0,
+          rating:
+            averageRating &&
+            typeof averageRating === "number" &&
+            !isNaN(averageRating)
+              ? Number(averageRating.toFixed(1))
+              : 0,
           reviewCount: totalReviews,
           location: ca?.location,
           profileImage: ca?.profileImage,
@@ -433,7 +442,9 @@ class CAService {
       }
 
       if (serviceRequest.userId !== userId) {
-        throw new Error("Unauthorized: Service request does not belong to user");
+        throw new Error(
+          "Unauthorized: Service request does not belong to user"
+        );
       }
 
       if (serviceRequest.caId !== caId) {
@@ -488,7 +499,9 @@ class CAService {
       // Clear cache
       await cacheService.del(cacheService.getCacheKeys().CA_REVIEWS(caId));
       await cacheService.del(cacheService.getCacheKeys().CA_PROFILE(caId));
-      await cacheService.del(cacheService.getCacheKeys().CA_RATING_DISTRIBUTION(caId));
+      await cacheService.del(
+        cacheService.getCacheKeys().CA_RATING_DISTRIBUTION(caId)
+      );
       await cacheService.del(cacheService.getCacheKeys().CA_DASHBOARD(caId));
 
       return {
@@ -651,34 +664,54 @@ class CAService {
         );
 
         // Log raw results for debugging
-        logger.info("Rating counts raw results", { ratingCounts, caId, ratingCountsLength: ratingCounts?.length });
+        logger.info("Rating counts raw results", {
+          ratingCounts,
+          caId,
+          ratingCountsLength: ratingCounts?.length,
+        });
 
         // Update the distribution with actual counts
         if (ratingCounts && Array.isArray(ratingCounts)) {
           ratingCounts.forEach((item) => {
             // Ensure rating is parsed as integer and count as integer
-            const rating = item.rating != null ? parseInt(String(item.rating), 10) : null;
-            const count = item.count != null ? parseInt(String(item.count), 10) : null;
-            
-            logger.debug("Processing rating item", { 
-              rawItem: item, 
-              rating, 
-              count, 
+            const rating =
+              item.rating != null ? parseInt(String(item.rating), 10) : null;
+            const count =
+              item.count != null ? parseInt(String(item.count), 10) : null;
+
+            logger.debug("Processing rating item", {
+              rawItem: item,
+              rating,
+              count,
               ratingType: typeof rating,
-              countType: typeof count 
+              countType: typeof count,
             });
-            
-            if (rating != null && count != null && !isNaN(rating) && !isNaN(count) && rating >= 1 && rating <= 5) {
+
+            if (
+              rating != null &&
+              count != null &&
+              !isNaN(rating) &&
+              !isNaN(count) &&
+              rating >= 1 &&
+              rating <= 5
+            ) {
               // Find the correct element in the array - ensure both are numbers
-              const distributionItem = ratingDistribution.find((dist) => Number(dist.rating) === Number(rating));
+              const distributionItem = ratingDistribution.find(
+                (dist) => Number(dist.rating) === Number(rating)
+              );
               if (distributionItem) {
                 distributionItem.count = count;
-                logger.debug(`Updated rating ${rating} with count ${count}`, { distributionItem });
+                logger.debug(`Updated rating ${rating} with count ${count}`, {
+                  distributionItem,
+                });
               } else {
-                logger.error("Could not find distribution item for rating", { 
-                  rating, 
+                logger.error("Could not find distribution item for rating", {
+                  rating,
                   ratingDistribution,
-                  ratingDistributionTypes: ratingDistribution.map(d => ({ rating: d.rating, type: typeof d.rating }))
+                  ratingDistributionTypes: ratingDistribution.map((d) => ({
+                    rating: d.rating,
+                    type: typeof d.rating,
+                  })),
                 });
               }
             } else {
@@ -686,9 +719,12 @@ class CAService {
             }
           });
         } else {
-          logger.warn("Rating counts is not an array", { ratingCounts, type: typeof ratingCounts });
+          logger.warn("Rating counts is not an array", {
+            ratingCounts,
+            type: typeof ratingCounts,
+          });
         }
-        
+
         logger.debug("Final rating distribution", { ratingDistribution });
 
         // Cache for 30 minutes
@@ -697,7 +733,9 @@ class CAService {
 
       // Ensure we always return a valid rating distribution array
       if (!ratingDistribution || !Array.isArray(ratingDistribution)) {
-        logger.warn("Invalid rating distribution from cache, reinitializing", { ratingDistribution });
+        logger.warn("Invalid rating distribution from cache, reinitializing", {
+          ratingDistribution,
+        });
         ratingDistribution = [
           { rating: 1, count: 0 },
           { rating: 2, count: 0 },

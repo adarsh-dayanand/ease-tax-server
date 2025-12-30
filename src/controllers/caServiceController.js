@@ -1,7 +1,33 @@
 const caServiceManagementService = require("../services/caServiceManagementService");
 const logger = require("../config/logger");
+const { Service } = require("../../models");
+
+/**
+ * Map frontend display name to backend enum value
+ * Currently maps to old enum values that exist in the database
+ * After migration runs, this can be updated to use new enum values
+ */
+function mapDisplayNameToEnum(displayName) {
+  // Map to OLD enum values that currently exist in the database:
+  // 'tax_filing', 'tax_planning', 'gst', 'audit', 'consultation', 'compliance', 'business_setup'
+  const mapping = {
+    "ITR Filing": "tax_filing",
+    "GST Registration": "gst",
+    "GST Filing": "gst",
+    "Company Registration": "business_setup",
+    "Trademark Registration": "business_setup",
+    "Tax Consultation": "consultation",
+    "Audit Services": "audit",
+    "Compliance Check": "compliance",
+    "Financial Consultation": "consultation",
+    "Other Services": "tax_filing", // Default fallback
+  };
+
+  return mapping[displayName] || displayName;
+}
 
 class CAServiceController {
+
   /**
    * Get CA's services
    * GET /ca-mgmt/services
@@ -287,7 +313,7 @@ class CAServiceController {
       const masterServices = [
         { key: "tax_filing", value: "ITR Filing" },
         { key: "gst_registration", value: "GST Registration" },
-        { key: "gst_filing", value: "GST Filing" },
+        { key: "gst_return_filing", value: "GST Filing" },
         { key: "company_registration", value: "Company Registration" },
         { key: "trademark_registration", value: "Trademark Registration" },
         { key: "tax_consultation", value: "Tax Consultation" },
@@ -306,6 +332,147 @@ class CAServiceController {
       res.status(500).json({
         success: false,
         message: "Failed to get services",
+      });
+    }
+  }
+
+  /**
+   * Create service for a specific CA
+   * POST /ca/:caId/services (authenticated endpoint)
+   * Verifies that the authenticated user matches the caId
+   */
+  async createServiceForCA(req, res) {
+    try {
+      const { caId } = req.params;
+      const serviceData = req.body;
+
+      // Verify the authenticated user matches the caId and is a CA
+      if (req.user.id !== caId || req.user.type !== "ca") {
+        return res.status(403).json({
+          success: false,
+          message: "You can only create services for your own CA account",
+        });
+      }
+
+      // Validate required fields
+      if (!serviceData.serviceName || !serviceData.price) {
+        return res.status(400).json({
+          success: false,
+          message: "Service name and price are required",
+        });
+      }
+
+      // Find the Service from master Services table by category and/or name
+      let service = null;
+      
+      // Map frontend display name to backend enum value
+      // Currently using old enum values that exist in the database
+      const serviceCategoryEnum = serviceData.serviceCategory
+        ? mapDisplayNameToEnum(serviceData.serviceCategory)
+        : "tax_filing"; // Default to tax_filing instead of "other" which might not exist
+
+      if (serviceData.serviceCategory && serviceData.serviceName) {
+        // Try to find by category and name first
+        service = await Service.findOne({
+          where: {
+            category: serviceCategoryEnum,
+            name: serviceData.serviceName,
+            isActive: true,
+          },
+        });
+      }
+
+      // If not found, try by category only
+      if (!service && serviceData.serviceCategory) {
+        service = await Service.findOne({
+          where: {
+            category: serviceCategoryEnum,
+            isActive: true,
+          },
+        });
+      }
+
+      // If still not found, try by name only
+      if (!service && serviceData.serviceName) {
+        service = await Service.findOne({
+          where: {
+            name: serviceData.serviceName,
+            isActive: true,
+          },
+        });
+      }
+
+      // If still not found, create a new Service in the master table
+      // This allows CAs to offer custom services
+      if (!service) {
+        try {
+          service = await Service.create({
+            name: serviceData.serviceName,
+            description: serviceData.serviceDescription || `Service: ${serviceData.serviceName}`,
+            category: serviceCategoryEnum,
+            isActive: true,
+            requirements: [],
+            deliverables: [],
+          });
+          logger.info(`Created new Service: ${serviceData.serviceName} with category: ${serviceCategoryEnum}`);
+        } catch (createError) {
+          logger.error("Error creating Service:", createError);
+          
+          // If creation fails due to enum issue, try to find any service in the category as fallback
+          try {
+            service = await Service.findOne({
+              where: {
+                category: serviceCategoryEnum,
+                isActive: true,
+              },
+            });
+          } catch (findError) {
+            logger.error("Error finding service by category:", findError);
+          }
+
+          if (!service) {
+            // Check if it's an enum error
+            if (createError.message && createError.message.includes("enum")) {
+              return res.status(400).json({
+                success: false,
+                message: `Invalid service category. The category '${serviceCategoryEnum}' is not valid. Please use a valid category from the dropdown.`,
+              });
+            }
+            
+            return res.status(400).json({
+              success: false,
+              message: `Unable to create or find service: ${createError.message || "Unknown error"}`,
+            });
+          }
+        }
+      }
+
+      // Map frontend data to backend format for associateCAWithService
+      const mappedServiceData = {
+        serviceId: service.id,
+        customPrice: parseFloat(serviceData.price) || 0,
+        currency: serviceData.currency || "INR",
+        customDuration: serviceData.duration || null, // Duration in minutes or days depending on frontend
+        notes: serviceData.serviceDescription || null,
+        isActive: true,
+      };
+
+      // Associate CA with the service using the new pattern
+      const caService = await caServiceManagementService.associateCAWithService(
+        caId,
+        mappedServiceData
+      );
+
+      res.json({
+        success: true,
+        data: caService,
+        message: "Service created successfully",
+      });
+    } catch (error) {
+      logger.error("Error in createServiceForCA:", error);
+      res.status(500).json({
+        success: false,
+        message: error.message || "Failed to create service",
       });
     }
   }

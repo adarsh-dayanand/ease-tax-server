@@ -29,13 +29,25 @@ router.use(authenticateToken);
 router.use(securityHeaders);
 router.use(sanitizeInput);
 
+// CA service management (authenticated routes)
+// POST /ca/:caId/services - Create a new service for the CA
+router.post(
+  "/:caId/services",
+  rateLimit.apiRateLimit,
+  caServiceController.createServiceForCA
+);
+
 // CA search and listing
 router.get("/", rateLimit.apiRateLimit, caController.searchCAs);
 
 // CA profile and details
 router.get("/:caId", rateLimit.apiRateLimit, caController.getCAProfile);
 router.get("/:caId/reviews", rateLimit.apiRateLimit, caController.getCAReviews);
-router.post("/:caId/reviews", rateLimit.apiRateLimit, caController.submitReview);
+router.post(
+  "/:caId/reviews",
+  rateLimit.apiRateLimit,
+  caController.submitReview
+);
 // Availability endpoints removed - CAs handle time slots through consultation requests
 
 // Cache management (admin only)
