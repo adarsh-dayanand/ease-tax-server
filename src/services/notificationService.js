@@ -1,5 +1,6 @@
 const { Notification, User, CA, ServiceRequest } = require("../../models");
 const cacheService = require("./cacheService");
+const emailService = require("./emailService");
 const logger = require("../config/logger");
 const { Op } = require("sequelize");
 
@@ -24,7 +25,7 @@ class NotificationService {
     notificationType,
     title,
     message,
-    options = {}
+    options = {},
   ) {
     try {
       const {
@@ -71,7 +72,7 @@ class NotificationService {
         await this.sendRealTimeNotification(
           recipientId,
           recipientType,
-          notification
+          notification,
         );
       }
 
@@ -89,7 +90,7 @@ class NotificationService {
     recipientId,
     recipientType = "user",
     page = 1,
-    limit = 20
+    limit = 20,
   ) {
     try {
       const cacheKey = cacheService
@@ -122,7 +123,7 @@ class NotificationService {
 
         const unreadCount = await Notification.getUnreadCount(
           recipientId,
-          recipientType
+          recipientType,
         );
 
         notifications = {
@@ -226,7 +227,7 @@ class NotificationService {
     notificationType,
     title,
     message,
-    options = {}
+    options = {},
   ) {
     try {
       const {
@@ -298,6 +299,144 @@ class NotificationService {
   }
 
   /**
+   * Send email notification
+   */
+  async sendEmailNotification(
+    recipientId,
+    recipientType,
+    notificationType,
+    templateData,
+  ) {
+    try {
+      // Get recipient email
+      let recipientEmail;
+      if (recipientType === "user") {
+        const user = await User.findByPk(recipientId);
+        recipientEmail = user?.email;
+      } else if (recipientType === "ca") {
+        const ca = await CA.findByPk(recipientId);
+        recipientEmail = ca?.email;
+      }
+
+      if (!recipientEmail) {
+        logger.warn(`No email found for ${recipientType} ${recipientId}`);
+        return { success: false, reason: "No email address" };
+      }
+
+      // Send email using template
+      const result = await emailService.sendTemplateEmail(
+        recipientEmail,
+        notificationType,
+        templateData,
+      );
+
+      logger.info(
+        `Email notification sent to ${recipientEmail} for ${notificationType}`,
+      );
+      return { success: true, messageId: result.messageId };
+    } catch (error) {
+      logger.error(`Error sending email notification:`, error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Create notification with multi-channel support
+   */
+  async createMultiChannelNotification(
+    recipientId,
+    recipientType,
+    notificationType,
+    title,
+    message,
+    options = {},
+  ) {
+    try {
+      const {
+        sendEmail = false,
+        sendInApp = true,
+        ...notificationOptions
+      } = options;
+
+      const results = {
+        inApp: null,
+        email: null,
+      };
+
+      // Create in-app notification
+      if (sendInApp) {
+        results.inApp = await this.createNotification(
+          recipientId,
+          recipientType,
+          notificationType,
+          title,
+          message,
+          { ...notificationOptions, channel: "in_app" },
+        );
+      }
+
+      // Send email notification
+      if (sendEmail) {
+        const emailResult = await this.sendEmailNotification(
+          recipientId,
+          recipientType,
+          notificationType,
+          notificationOptions.templateData || {},
+        );
+
+        // Create email notification record
+        if (emailResult.success) {
+          results.email = await Notification.create({
+            recipientId,
+            recipientType,
+            senderId: notificationOptions.senderId || null,
+            senderType: notificationOptions.senderType || "system",
+            serviceRequestId: notificationOptions.serviceRequestId || null,
+            notificationType,
+            channel: "email",
+            priority: notificationOptions.priority || "medium",
+            title,
+            message,
+            actionUrl: notificationOptions.actionUrl || null,
+            actionText: notificationOptions.actionText || null,
+            templateData: notificationOptions.templateData || {},
+            status: "sent",
+            sentAt: new Date(),
+            externalId: emailResult.messageId,
+            isRead: false,
+          });
+        } else {
+          // Create failed email notification record
+          results.email = await Notification.create({
+            recipientId,
+            recipientType,
+            senderId: notificationOptions.senderId || null,
+            senderType: notificationOptions.senderType || "system",
+            serviceRequestId: notificationOptions.serviceRequestId || null,
+            notificationType,
+            channel: "email",
+            priority: notificationOptions.priority || "medium",
+            title,
+            message,
+            actionUrl: notificationOptions.actionUrl || null,
+            actionText: notificationOptions.actionText || null,
+            templateData: notificationOptions.templateData || {},
+            status: "failed",
+            failedAt: new Date(),
+            failureReason: emailResult.error || emailResult.reason,
+            isRead: false,
+          });
+        }
+      }
+
+      return results;
+    } catch (error) {
+      logger.error("Error creating multi-channel notification:", error);
+      throw error;
+    }
+  }
+
+  /**
    * Send real-time notification via WebSocket
    */
   async sendRealTimeNotification(recipientId, recipientType, notification) {
@@ -324,7 +463,7 @@ class NotificationService {
 
       logger.info(
         `Real-time notification sent to ${roomName}:`,
-        notification.title
+        notification.title,
       );
     } catch (error) {
       logger.error("Error sending real-time notification:", error);
@@ -335,7 +474,7 @@ class NotificationService {
    * Helper methods for common notification types
    */
   async notifyConsultationRequested(caId, serviceRequestId, userInfo) {
-    return await this.createNotification(
+    return await this.createMultiChannelNotification(
       caId,
       "ca",
       "consultation_requested",
@@ -346,13 +485,20 @@ class NotificationService {
         actionUrl: `/ca/consultations/${serviceRequestId}`,
         actionText: "View Request",
         priority: "high",
-        templateData: { userName: userInfo.name },
-      }
+        sendEmail: true,
+        sendInApp: true,
+        templateData: {
+          userName: userInfo.name,
+          userEmail: userInfo.email,
+          purpose: userInfo.purpose || "",
+          serviceRequestId,
+        },
+      },
     );
   }
 
   async notifyConsultationAccepted(userId, serviceRequestId, caInfo) {
-    return await this.createNotification(
+    return await this.createMultiChannelNotification(
       userId,
       "user",
       "consultation_accepted",
@@ -363,13 +509,19 @@ class NotificationService {
         actionUrl: `/consultations/${serviceRequestId}`,
         actionText: "View Details",
         priority: "high",
-        templateData: { caName: caInfo.name },
-      }
+        sendEmail: true,
+        sendInApp: true,
+        templateData: {
+          caName: caInfo.name,
+          caEmail: caInfo.email,
+          serviceRequestId,
+        },
+      },
     );
   }
 
   async notifyPaymentSuccessful(userId, paymentInfo) {
-    return await this.createNotification(
+    return await this.createMultiChannelNotification(
       userId,
       "user",
       "payment_successful",
@@ -380,13 +532,21 @@ class NotificationService {
         actionUrl: `/payments/${paymentInfo.id}`,
         actionText: "View Receipt",
         priority: "medium",
-        templateData: { amount: paymentInfo.amount },
-      }
+        sendEmail: true,
+        sendInApp: true,
+        templateData: {
+          amount: paymentInfo.amount,
+          orderId: paymentInfo.orderId,
+          paymentId: paymentInfo.id,
+          serviceRequestId: paymentInfo.serviceRequestId,
+          serviceName: paymentInfo.serviceName || "",
+        },
+      },
     );
   }
 
   async notifyDocumentUploaded(recipientId, recipientType, documentInfo) {
-    return await this.createNotification(
+    return await this.createMultiChannelNotification(
       recipientId,
       recipientType,
       "document_uploaded",
@@ -397,13 +557,20 @@ class NotificationService {
         actionUrl: `/documents/${documentInfo.id}`,
         actionText: "View Document",
         priority: "medium",
-        templateData: { documentName: documentInfo.name },
-      }
+        sendEmail: true,
+        sendInApp: true,
+        templateData: {
+          documentName: documentInfo.name,
+          uploaderName: documentInfo.uploaderName,
+          uploaderType: documentInfo.uploaderType,
+          serviceRequestId: documentInfo.serviceRequestId,
+        },
+      },
     );
   }
 
   async notifyMeetingScheduled(recipientId, recipientType, meetingInfo) {
-    return await this.createNotification(
+    return await this.createMultiChannelNotification(
       recipientId,
       recipientType,
       "meeting_scheduled",
@@ -414,11 +581,15 @@ class NotificationService {
         actionUrl: `/meetings/${meetingInfo.id}`,
         actionText: "Join Meeting",
         priority: "high",
+        sendEmail: true,
+        sendInApp: true,
         templateData: {
-          meetingTime: meetingInfo.scheduledDateTime,
-          meetingLink: meetingInfo.meetingUrl,
+          scheduledDateTime: meetingInfo.scheduledDateTime,
+          meetingUrl: meetingInfo.meetingUrl,
+          otherPartyName: meetingInfo.otherPartyName,
+          serviceRequestId: meetingInfo.serviceRequestId,
         },
-      }
+      },
     );
   }
 }

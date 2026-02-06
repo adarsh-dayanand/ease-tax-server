@@ -13,7 +13,8 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "lint": "eslint src/",
-    "lint:fix": "eslint src/ --fix"
+    "lint:fix": "eslint src/ --fix",
+    "ecr:push": "aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin 821776167610.dkr.ecr.ap-south-1.amazonaws.com && docker build -t ease-tax . && docker tag ease-tax:latest 821776167610.dkr.ecr.ap-south-1.amazonaws.com/ease-tax:latest && docker push 821776167610.dkr.ecr.ap-south-1.amazonaws.com/ease-tax:latest"
   },
   "dependencies": {
     "aws-sdk": "^2.1692.0",
@@ -41,6 +42,7 @@
     "pg-hstore": "^2.3.4",
     "razorpay": "^2.9.6",
     "redis": "^5.8.3",
+    "resend": "^6.9.1",
     "sequelize": "^6.37.7",
     "sharp": "^0.33.1",
     "socket.io": "^4.8.1",
