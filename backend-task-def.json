@@ -4,6 +4,7 @@
   "requiresCompatibilities": ["FARGATE"],
   "cpu": "256",
   "memory": "512",
+  "executionRoleArn": "arn:aws:iam::821776167610:role/ecsTaskExecutionRole-ease-tax-backend",
   "containerDefinitions": [
     {
       "name": "backend",
