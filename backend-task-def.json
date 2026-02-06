@@ -17,22 +17,8 @@
         }
       ],
       "environment": [
-        {
-          "name": "NODE_ENV",
-          "value": "production"
-        },
-        {
-          "name": "PORT",
-          "value": "3000"
-        },
-        {
-          "name": "REDIS_HOST",
-          "value": "clustercfg.redis-free-tier-cluster.wluq8y.aps1.cache.amazonaws.com"
-        },
-        {
-          "name": "REDIS_PORT",
-          "value": "6379"
-        }
+        { "name": "NODE_ENV", "value": "production" },
+        { "name": "PORT", "value": "3000" }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",

@@ -10,25 +10,19 @@ class RedisManager {
   async connect() {
     try {
       this.client = createClient({
-        host: process.env.REDIS_HOST || "localhost",
-        port: process.env.REDIS_PORT || 6379,
-        password: process.env.REDIS_PASSWORD || undefined,
-        db: process.env.REDIS_DB || 0,
-        retry_strategy: (options) => {
-          if (options.error && options.error.code === "ECONNREFUSED") {
-            logger.error("Redis connection refused");
-            return new Error("Redis server connection refused");
-          }
-          if (options.total_retry_time > 1000 * 60 * 60) {
-            logger.error("Redis retry time exhausted");
-            return new Error("Redis retry time exhausted");
-          }
-          if (options.attempt > 10) {
-            logger.error("Redis max retry attempts reached");
-            return undefined;
-          }
-          return Math.min(options.attempt * 100, 3000);
+        socket: {
+          host: process.env.REDIS_HOST || "localhost",
+          port: parseInt(process.env.REDIS_PORT) || 6379,
+          reconnectStrategy: (retries) => {
+            if (retries > 10) {
+              logger.error("Redis max retry attempts reached");
+              return false;
+            }
+            return Math.min(retries * 100, 3000);
+          },
         },
+        password: process.env.REDIS_PASSWORD || undefined,
+        database: parseInt(process.env.REDIS_DB) || 0,
       });
 
       this.client.on("error", (error) => {

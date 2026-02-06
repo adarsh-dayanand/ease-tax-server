@@ -13,6 +13,8 @@ env:
   ECS_CLUSTER: ease-tax-cluster
   ECS_TASK_DEFINITION: backend-task-def.json
   CONTAINER_NAME: ease-tax-backend
+  REDIS_HOST: clustercfg.redis-free-tier-cluster.wluq8y.aps1.cache.amazonaws.com
+  REDIS_PORT: 6379
 
 jobs:
   deploy:
@@ -54,6 +56,19 @@ jobs:
           task-definition: ${{ env.ECS_TASK_DEFINITION }}
           container-name: ${{ env.CONTAINER_NAME }}
           image: ${{ steps.build-image.outputs.image }}
+          environment-variables: |
+            DB_HOST=${{ secrets.DB_HOST }}
+            DB_PORT=${{ secrets.DB_PORT }}
+            DB_NAME=${{ secrets.DB_NAME }}
+            DB_USERNAME=${{ secrets.DB_USERNAME }}
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
+            FIREBASE_PROJECT_ID=${{ secrets.FIREBASE_PROJECT_ID }}
+            FIREBASE_PRIVATE_KEY=${{ secrets.FIREBASE_PRIVATE_KEY }}
+            FIREBASE_CLIENT_EMAIL=${{ secrets.FIREBASE_CLIENT_EMAIL }}
+            REDIS_HOST=${{ env.REDIS_HOST }}
+            REDIS_PORT=${{ env.REDIS_PORT }}
 
       - name: Deploy Amazon ECS task definition
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2

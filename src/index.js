@@ -84,20 +84,21 @@ connectRedis()
   .catch((err) => {
     logger.warn(
       "Redis connection failed - continuing without cache:",
-      err.message
+      err.message,
     );
     // Continue without Redis - caching will be disabled
   });
 
 // Initialize Redis manager for sessions and caching
-redisManager.connect()
+redisManager
+  .connect()
   .then(() => {
     logger.info("Redis manager connected successfully");
   })
   .catch((err) => {
     logger.warn(
       "Redis manager connection failed - sessions and caching disabled:",
-      err.message
+      err.message,
     );
   });
 
@@ -210,8 +211,27 @@ const gracefulShutdown = (signal) => {
 };
 
 // Remove existing listeners to prevent memory leaks during development restarts
-process.removeAllListeners('SIGTERM');
-process.removeAllListeners('SIGINT');
+process.removeAllListeners("SIGTERM");
+process.removeAllListeners("SIGINT");
 
-process.on("SIGTERM", () => gracefulShutdown('SIGTERM'));
-process.on("SIGINT", () => gracefulShutdown('SIGINT'));
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+
+// Add global error handlers for unhandled promises and exceptions
+process.on("unhandledRejection", (reason, promise) => {
+  logger.error("Unhandled Rejection at:", {
+    promise,
+    reason: reason.message || reason,
+    stack: reason.stack,
+  });
+  // In production, we might want to shut down gracefully
+  // gracefulShutdown('unhandledRejection');
+});
+
+process.on("uncaughtException", (error) => {
+  logger.error("Uncaught Exception:", {
+    error: error.message,
+    stack: error.stack,
+  });
+  gracefulShutdown("uncaughtException");
+});
