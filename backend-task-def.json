@@ -27,7 +27,7 @@
         },
         {
           "name": "REDIS_HOST",
-          "value": "ease-tax-redis.xxxxxx.0001.aps1.cache.amazonaws.com"
+          "value": "clustercfg.redis-free-tier-cluster.wluq8y.aps1.cache.amazonaws.com"
         },
         {
           "name": "REDIS_PORT",
