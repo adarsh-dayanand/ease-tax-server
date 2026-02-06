@@ -7,7 +7,7 @@
   "executionRoleArn": "arn:aws:iam::821776167610:role/ecsTaskExecutionRole-ease-tax-backend",
   "containerDefinitions": [
     {
-      "name": "backend",
+      "name": "ease-tax-backend",
       "image": "821776167610.dkr.ecr.ap-south-1.amazonaws.com/ease-tax-backend:latest",
       "essential": true,
       "portMappings": [

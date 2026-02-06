@@ -12,7 +12,7 @@ env:
   ECS_SERVICE: ease-tax-backend
   ECS_CLUSTER: ease-tax-cluster
   ECS_TASK_DEFINITION: backend-task-def.json
-  CONTAINER_NAME: backend
+  CONTAINER_NAME: ease-tax-backend
 
 jobs:
   deploy:
