@@ -3,7 +3,15 @@ const logger = require("../config/logger");
 
 class EmailService {
   constructor() {
-    this.resend = new Resend(process.env.RESEND_API_KEY);
+    if (process.env.RESEND_API_KEY) {
+      this.resend = new Resend(process.env.RESEND_API_KEY);
+      logger.info("✅ Resend email client initialized");
+    } else {
+      this.resend = null;
+      logger.warn(
+        "⚠️  RESEND_API_KEY not found. Email service will be disabled.",
+      );
+    }
     this.fromEmail = process.env.EMAIL_FROM || "noreply@easetax.co.in";
     this.fromName = process.env.EMAIL_FROM_NAME || "EaseTax Team";
   }
