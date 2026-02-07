@@ -158,6 +158,7 @@ const healthCheck = (req, res) => {
 app.get("/health", healthCheck);
 app.get("/api/health", healthCheck);
 
+app.get("/api", (req, res) => res.json({ message: "EaseTax Backend API v1" }));
 app.get("/", (req, res) => res.json({ message: "EaseTax Backend API v1" }));
 
 // Error handling
