@@ -14,9 +14,7 @@ COPY package*.json ./
 # Install dependencies
 RUN npm install --only=production
 
-RUN npm install pm2 -g
-
-RUN npm run migrate
+RUN npm install pm2 sequelize-cli -g
 
 # Copy application code
 COPY . .
@@ -31,6 +29,6 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})" || exit 1
 
-# Start application
-CMD ["pm2", "start", "src/index.js"]
+# Start application: Run migrations then start with pm2-runtime
+CMD ["sh", "-c", "sequelize db:migrate && pm2-runtime start src/index.js"]
 
