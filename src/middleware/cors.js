@@ -35,29 +35,47 @@ const getCorsOptions = () => {
   const allowedOrigins = [
     frontendUrl,
     websocketOrigin,
-    "*",
     // Add production domains here
     "https://easetax.co.in",
     "https://www.easetax.co.in",
     "https://app.easetax.co.in",
+    "https://service.easetax.co.in",
     "http://easetax.co.in",
     "http://www.easetax.co.in",
     "http://app.easetax.co.in",
+    "http://service.easetax.co.in",
   ].filter(Boolean);
 
   return {
     origin: (origin, callback) => {
-      // Allow requests with no origin (mobile apps, Postman, etc.)
+      // Allow requests with no origin (mobile apps, it hits the server directly)
       if (!origin) {
         return callback(null, true);
       }
 
+      // Exact match check
       if (allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        logger.warn(`CORS blocked origin: ${origin}`);
-        callback(new Error("Not allowed by CORS"));
+        return callback(null, true);
       }
+
+      // Subdomain check (optional but safer for dev)
+      const isAllowedSubdomain = allowedOrigins.some((allowed) => {
+        if (!allowed || typeof allowed !== "string") return false;
+        return origin.endsWith(allowed.replace(/^https?:\/\//, ""));
+      });
+
+      if (isAllowedSubdomain) {
+        return callback(null, true);
+      }
+
+      logger.warn(`CORS blocked origin: ${origin}`, {
+        allowedOrigins: allowedOrigins,
+        originType: typeof origin,
+      });
+
+      const corsError = new Error("Not allowed by CORS");
+      corsError.status = 403;
+      callback(corsError);
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],

@@ -133,18 +133,34 @@ app.get("/api/health", healthCheck);
 app.get("/api", (req, res) => res.json({ message: "EaseTax Backend API v1" }));
 app.get("/", (req, res) => res.json({ message: "EaseTax Backend API v1" }));
 
-// Error handling
+// CORS error handling MUST come before the global error handler
+app.use(corsErrorHandler);
+
+// Global Error handling
 app.use((err, req, res, next) => {
-  logger.error("Global error handler", {
+  logger.error("Global error handler caught an error", {
     error: err.message,
     stack: err.stack,
     path: req.path,
+    method: req.method,
   });
-  res
-    .status(500)
-    .json({ success: false, error: { message: "Internal server error" } });
+
+  // If headers already sent, delegate to default express error handler
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  res.status(err.status || 500).json({
+    success: false,
+    error: {
+      message:
+        process.env.NODE_ENV === "development"
+          ? err.message
+          : "Internal server error",
+      code: err.code || "INTERNAL_ERROR",
+    },
+  });
 });
-app.use(corsErrorHandler);
 
 // Start
 server.listen(PORT, () => {

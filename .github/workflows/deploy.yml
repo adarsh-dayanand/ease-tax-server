@@ -111,6 +111,7 @@ jobs:
             REDIS_HOST=${{ secrets.REDIS_HOST }}
             REDIS_PORT=${{ env.REDIS_PORT }}
             FRONTEND_URL=${{ secrets.FRONTEND_URL }}
+            NODE_ENV=production
 
       - name: Fill in the Nginx proxy image in the Amazon ECS task definition
         id: render-proxy
