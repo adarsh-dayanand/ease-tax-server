@@ -146,14 +146,17 @@ app.use("/api/coupons", couponRoutes);
 app.use("/api/masters", masterRoutes);
 
 // Health check
-app.get("/health", (req, res) => {
+const healthCheck = (req, res) => {
   res.json({
     status: "OK",
     timestamp: new Date().toISOString(),
     service: "EaseTax Backend API",
     redis: redisManager.isConnected ? "connected" : "disconnected",
   });
-});
+};
+
+app.get("/health", healthCheck);
+app.get("/api/health", healthCheck);
 
 app.get("/", (req, res) => res.json({ message: "EaseTax Backend API v1" }));
 
