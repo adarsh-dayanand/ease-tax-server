@@ -11,11 +11,12 @@ const db = {};
 
 let sequelize;
 
-sequelize = new Sequelize(config.database, config.username, config.password, {
-  dialect: config.dialect,
-  host: config.host,
-  port: config.port,
-});
+sequelize = new Sequelize(
+  config.database,
+  config.username,
+  config.password,
+  config,
+);
 
 fs.readdirSync(__dirname)
   .filter((file) => {
