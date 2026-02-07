@@ -2,26 +2,8 @@ require("dotenv").config();
 const env = process.env.NODE_ENV || "development";
 console.log(`🚀 STARTING SERVER in ${env} mode`);
 
-// 1.5 Log environment variables for debugging (Masking sensitive data)
-console.log("📋 Checking Environment Variables:");
-const sensitiveKeys = ["PASSWORD", "SECRET", "KEY", "TOKEN", "PRIVATE"];
-Object.keys(process.env).forEach((key) => {
-  const isSensitive = sensitiveKeys.some((s) => key.includes(s));
-  const value = process.env[key];
-  if (isSensitive && value) {
-    const masked =
-      value.length > 8
-        ? `${value.substring(0, 4)}...${value.substring(value.length - 4)}`
-        : "****";
-    console.log(`   ${key}: ${masked} (length: ${value.length})`);
-  } else {
-    console.log(`   ${key}: ${value}`);
-  }
-});
-
 // 2. Initialize logger early to capture startup errors
 const logger = require("./config/logger");
-console.log("✅ Logger initialized");
 
 // 3. Register global error handlers before anything else
 process.on("unhandledRejection", (reason, promise) => {
@@ -42,25 +24,18 @@ process.on("uncaughtException", (error) => {
 });
 
 // 4. Basic imports
-console.log("📦 Importing core dependencies...");
 const express = require("express");
 const http = require("http");
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
-console.log("✅ Core dependencies loaded");
 
 // 5. Service imports (The likely hang point)
-console.log("📦 Loading WebSocket service...");
 const webSocketService = require("./websocket/chatService");
-console.log("✅ WebSocket service loaded");
 
-console.log("📦 Loading Notification service...");
 const notificationService = require("./services/notificationService");
-console.log("✅ Notification service loaded");
 
 // 6. Middleware imports
-console.log("📦 Loading middlewares...");
 const {
   dynamicCors,
   corsErrorHandler,
@@ -77,14 +52,12 @@ const {
   globalRateLimit,
   logRateLimitViolation,
 } = require("./middleware/rateLimit");
-console.log("✅ Middlewares loaded");
 
 // 7. DB and Redis imports
 const { connectRedis } = require("./redis");
 const redisManager = require("./config/redis");
 
 // 8. Route imports
-console.log("📦 Loading routes...");
 const authRoutes = require("./routes/auth");
 const userRoutes = require("./routes/users");
 const caRoutes = require("./routes/ca");
@@ -97,7 +70,6 @@ const notificationRoutes = require("./routes/notifications");
 const vcRoutes = require("./routes/vc");
 const couponRoutes = require("./routes/coupons");
 const masterRoutes = require("./routes/masters");
-console.log("✅ Routes loaded");
 
 // Security middleware
 app.use(securityHeaders);
