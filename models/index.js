@@ -27,11 +27,13 @@ fs.readdirSync(__dirname)
     );
   })
   .forEach((file) => {
+    console.log(`🔍 Loading model from file: ${file}`);
     const model = require(path.join(__dirname, file))(
       sequelize,
-      Sequelize.DataTypes
+      Sequelize.DataTypes,
     );
     db[model.name] = model;
+    console.log(`✅ Model loaded: ${model.name}`);
   });
 
 Object.keys(db).forEach((modelName) => {

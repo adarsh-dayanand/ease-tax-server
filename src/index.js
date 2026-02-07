@@ -1,20 +1,66 @@
-// Environment variables are loaded by config/config.js
 require("dotenv").config();
-console.log("✅ Environment loaded", process.env.NODE_ENV);
+const env = process.env.NODE_ENV || "development";
+console.log(`🚀 STARTING SERVER in ${env} mode`);
 
+// 1.5 Log environment variables for debugging (Masking sensitive data)
+console.log("📋 Checking Environment Variables:");
+const sensitiveKeys = ["PASSWORD", "SECRET", "KEY", "TOKEN", "PRIVATE"];
+Object.keys(process.env).forEach((key) => {
+  const isSensitive = sensitiveKeys.some((s) => key.includes(s));
+  const value = process.env[key];
+  if (isSensitive && value) {
+    const masked =
+      value.length > 8
+        ? `${value.substring(0, 4)}...${value.substring(value.length - 4)}`
+        : "****";
+    console.log(`   ${key}: ${masked} (length: ${value.length})`);
+  } else {
+    console.log(`   ${key}: ${value}`);
+  }
+});
+
+// 2. Initialize logger early to capture startup errors
+const logger = require("./config/logger");
+console.log("✅ Logger initialized");
+
+// 3. Register global error handlers before anything else
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("❌ UNHANDLED REJECTION:", reason);
+  logger.error("Unhandled Rejection", {
+    reason: reason.message || reason,
+    stack: reason.stack,
+  });
+});
+
+process.on("uncaughtException", (error) => {
+  console.error("❌ UNCAUGHT EXCEPTION:", error);
+  logger.error("Uncaught Exception", {
+    error: error.message,
+    stack: error.stack,
+  });
+  process.exit(1);
+});
+
+// 4. Basic imports
+console.log("📦 Importing core dependencies...");
 const express = require("express");
 const http = require("http");
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
-console.log("✅ Express and HTTP server created");
+console.log("✅ Core dependencies loaded");
 
-// Import WebSocket service and notification service
+// 5. Service imports (The likely hang point)
+console.log("📦 Loading WebSocket service...");
 const webSocketService = require("./websocket/chatService");
-const notificationService = require("./services/notificationService");
-console.log("✅ WebSocket and notification services imported");
+console.log("✅ WebSocket service loaded");
 
-// Import middleware
+console.log("📦 Loading Notification service...");
+const notificationService = require("./services/notificationService");
+console.log("✅ Notification service loaded");
+
+// 6. Middleware imports
+console.log("📦 Loading middlewares...");
 const {
   dynamicCors,
   corsErrorHandler,
@@ -31,13 +77,14 @@ const {
   globalRateLimit,
   logRateLimitViolation,
 } = require("./middleware/rateLimit");
-const logger = require("./config/logger");
+console.log("✅ Middlewares loaded");
 
-// Import Redis client and connect
+// 7. DB and Redis imports
 const { connectRedis } = require("./redis");
 const redisManager = require("./config/redis");
 
-// Import routes
+// 8. Route imports
+console.log("📦 Loading routes...");
 const authRoutes = require("./routes/auth");
 const userRoutes = require("./routes/users");
 const caRoutes = require("./routes/ca");
@@ -50,62 +97,38 @@ const notificationRoutes = require("./routes/notifications");
 const vcRoutes = require("./routes/vc");
 const couponRoutes = require("./routes/coupons");
 const masterRoutes = require("./routes/masters");
+console.log("✅ Routes loaded");
 
-// Security middleware (applied early)
+// Security middleware
 app.use(securityHeaders);
 app.use(corsSecurityHeaders);
 app.use(handlePreflightOptions);
 app.use(dynamicCors);
 
-// Request parsing and size limits
+// Request parsing
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
-
-// Static file serving for uploads
 app.use("/uploads", express.static("uploads"));
 
-// Security and validation middleware
+// Security and validation
 app.use(sanitizeInput);
 app.use(validateRequest);
 app.use(preventSQLInjection);
-
-// Rate limiting
 app.use(logRateLimitViolation);
 app.use(globalRateLimit);
 
-// Swagger UI integration
+// Swagger
 require("./config/swagger")(app);
 
-// Initialize Redis connection (non-blocking)
-connectRedis()
-  .then(() => {
-    logger.info("Redis connected successfully");
-  })
-  .catch((err) => {
-    logger.warn(
-      "Redis connection failed - continuing without cache:",
-      err.message,
-    );
-    // Continue without Redis - caching will be disabled
-  });
-
-// Initialize Redis manager for sessions and caching
+// Connections
+console.log("🔌 Initializing connections...");
+connectRedis().catch((err) => logger.warn("Redis connection warning:", err));
 redisManager
   .connect()
-  .then(() => {
-    logger.info("Redis manager connected successfully");
-  })
-  .catch((err) => {
-    logger.warn(
-      "Redis manager connection failed - sessions and caching disabled:",
-      err.message,
-    );
-  });
+  .catch((err) => logger.warn("Redis Manager connection warning:", err));
 
-// Initialize WebSocket service
+// Initialize WS
 const io = webSocketService.initialize(server);
-
-// Set Socket.IO instance for notification service
 notificationService.setSocketIO(io);
 
 // API Routes
@@ -122,116 +145,41 @@ app.use("/api/vc", vcRoutes);
 app.use("/api/coupons", couponRoutes);
 app.use("/api/masters", masterRoutes);
 
-// Health check endpoint
+// Health check
 app.get("/health", (req, res) => {
-  const redisStatus = redisManager.isConnected ? "connected" : "disconnected";
   res.json({
     status: "OK",
     timestamp: new Date().toISOString(),
     service: "EaseTax Backend API",
-    version: "1.0.0",
-    redis: !!redisStatus,
+    redis: redisManager.isConnected ? "connected" : "disconnected",
   });
 });
 
-// Root endpoint
-app.get("/", (req, res) => {
-  res.json({
-    message: "EaseTax Backend API v1",
-    documentation: "/docs",
-    health: "/health",
-  });
-});
+app.get("/", (req, res) => res.json({ message: "EaseTax Backend API v1" }));
 
-// Global error handler
+// Error handling
 app.use((err, req, res, next) => {
   logger.error("Global error handler", {
     error: err.message,
     stack: err.stack,
     path: req.path,
-    method: req.method,
-    ip: req.ip,
-    userAgent: req.get("User-Agent"),
   });
-
-  if (err.name === "ValidationError") {
-    return res.status(400).json({
-      success: false,
-      error: {
-        code: "VALIDATION_ERROR",
-        message: err.message,
-      },
-    });
-  }
-
-  res.status(500).json({
-    success: false,
-    error: {
-      code: "INTERNAL_SERVER_ERROR",
-      message:
-        process.env.NODE_ENV === "production"
-          ? "Internal server error"
-          : err.message,
-    },
-  });
+  res
+    .status(500)
+    .json({ success: false, error: { message: "Internal server error" } });
 });
-
-// CORS error handler
 app.use(corsErrorHandler);
 
-// 404 handler - catch all unmatched routes
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    error: {
-      code: "ENDPOINT_NOT_FOUND",
-      message: `Endpoint ${req.method} ${req.originalUrl} not found`,
-    },
-  });
-});
-
-// Start the server
-const httpServer = server.listen(PORT, () => {
-  logger.info(`EaseTax Backend API server running on port ${PORT}`, {
-    port: PORT,
-    environment: process.env.NODE_ENV || "development",
-    documentation: `http://localhost:${PORT}/docs`,
-  });
+// Start
+server.listen(PORT, () => {
   console.log(`🚀 SERVER RUNNING on http://localhost:${PORT}`);
-  console.log(`📚 API Documentation: http://localhost:${PORT}/docs`);
+  logger.info(`Server started on port ${PORT}`);
 });
 
-// Graceful shutdown
 const gracefulShutdown = (signal) => {
-  logger.info(`${signal} received, shutting down gracefully`);
-  httpServer.close(() => {
-    logger.info("Process terminated");
-    process.exit(0);
-  });
+  console.log(`\n${signal} received. Shutting down...`);
+  server.close(() => process.exit(0));
 };
-
-// Remove existing listeners to prevent memory leaks during development restarts
-process.removeAllListeners("SIGTERM");
-process.removeAllListeners("SIGINT");
 
 process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
 process.on("SIGINT", () => gracefulShutdown("SIGINT"));
-
-// Add global error handlers for unhandled promises and exceptions
-process.on("unhandledRejection", (reason, promise) => {
-  logger.error("Unhandled Rejection at:", {
-    promise,
-    reason: reason.message || reason,
-    stack: reason.stack,
-  });
-  // In production, we might want to shut down gracefully
-  // gracefulShutdown('unhandledRejection');
-});
-
-process.on("uncaughtException", (error) => {
-  logger.error("Uncaught Exception:", {
-    error: error.message,
-    stack: error.stack,
-  });
-  gracefulShutdown("uncaughtException");
-});
