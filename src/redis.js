@@ -2,7 +2,8 @@ const redis = require("redis");
 
 const client = redis.createClient({
   socket: {
-    url: process.env.REDIS_URL || "redis://127.0.0.1:6379",
+    host: process.env.REDIS_HOST || "127.0.0.1",
+    port: parseInt(process.env.REDIS_PORT) || 6379,
     reconnectStrategy: (retries) => {
       if (retries > 10) {
         console.error("Redis max retry attempts reached");
@@ -11,6 +12,7 @@ const client = redis.createClient({
       return Math.min(retries * 100, 3000);
     },
   },
+  password: process.env.REDIS_PASSWORD || undefined,
 });
 
 client.on("error", (err) => {

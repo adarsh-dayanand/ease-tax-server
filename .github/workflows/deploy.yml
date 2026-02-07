@@ -13,7 +13,6 @@ env:
   ECS_CLUSTER: ease-tax-cluster
   ECS_TASK_DEFINITION: backend-task-def.json
   CONTAINER_NAME: ease-tax-backend
-  REDIS_HOST: clustercfg.redis-free-tier-cluster.wluq8y.aps1.cache.amazonaws.com
   REDIS_PORT: 6379
 
 jobs:
@@ -95,7 +94,7 @@ jobs:
             AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}
             AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}
             AWS_S3_BUCKET=${{ secrets.AWS_S3_BUCKET }}
-            REDIS_HOST=${{ env.REDIS_HOST }}
+            REDIS_HOST=${{ secrets.REDIS_HOST }}
             REDIS_PORT=${{ env.REDIS_PORT }}
 
       - name: Deploy Amazon ECS task definition
