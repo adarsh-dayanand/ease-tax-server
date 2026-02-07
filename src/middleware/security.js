@@ -216,11 +216,22 @@ const preventSQLInjection = (req, res, next) => {
     /(--\s*[^\r\n]*)/g,
   ];
 
-  // Only check body and query parameters, not the URL path
-  const requestString = JSON.stringify({
-    body: req.body || {},
-    query: req.query || {},
+  // Fields to skip SQL injection check (like opaque high-entropy tokens)
+  const skipFields = ["idToken", "refreshToken", "token", "firebaseToken"];
+
+  // Create a copy of body/query to check, removing sensitive/opaque fields
+  const dataToCheck = {
+    body: { ...(req.body || {}) },
+    query: { ...(req.query || {}) },
+  };
+
+  // Remove skip fields from the check
+  skipFields.forEach((field) => {
+    if (dataToCheck.body[field]) delete dataToCheck.body[field];
+    if (dataToCheck.query[field]) delete dataToCheck.query[field];
   });
+
+  const requestString = JSON.stringify(dataToCheck);
 
   for (const pattern of sqlPatterns) {
     if (pattern.test(requestString)) {
@@ -229,6 +240,7 @@ const preventSQLInjection = (req, res, next) => {
         userAgent: req.get("User-Agent"),
         path: req.path,
         method: req.method,
+        pattern: pattern.source,
         userId: req.user ? req.user.id : null,
       });
 
