@@ -61,7 +61,7 @@ module.exports = (sequelize, DataTypes) => {
         "inactive",
         "suspended",
         "rejected",
-        "pending_registration"
+        "pending_registration",
       ),
       defaultValue: "active",
       allowNull: false,
@@ -111,7 +111,7 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.UUID,
       allowNull: true,
       field: "ca_type_id",
-      defaultValue: "ca",
+      defaultValue: "550e8400-e29b-41d4-a716-446655440000",
       references: {
         model: "ca_types",
         key: "id",

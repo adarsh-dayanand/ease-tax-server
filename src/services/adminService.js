@@ -35,13 +35,6 @@ class AdminService {
         limit,
         offset,
         order: [["createdAt", "DESC"]],
-        include: [
-          {
-            model: require("../../models").CASpecialization,
-            as: "specializations",
-            attributes: ["specialization", "experience"],
-          },
-        ],
       });
 
       const cas = rows.map((ca) => ({
@@ -55,7 +48,6 @@ class AdminService {
         status: ca.status || "active",
         completedFilings: ca.completedFilings,
         phoneVerified: ca.phoneVerified,
-        specializations: ca.specializations?.map((s) => s.specialization) || [],
         lastLogin: ca.lastLogin,
         createdAt: ca.createdAt,
       }));
@@ -87,13 +79,6 @@ class AdminService {
         limit,
         offset,
         order: [["createdAt", "ASC"]], // Oldest first for verification queue
-        include: [
-          {
-            model: require("../../models").CASpecialization,
-            as: "specializations",
-            attributes: ["specialization", "experience"],
-          },
-        ],
       });
 
       const pendingCAs = rows.map((ca) => ({
@@ -103,10 +88,9 @@ class AdminService {
         phone: ca.phone,
         location: ca.location,
         image: ca.image,
-        specializations: ca.specializations?.map((s) => s.specialization) || [],
         registeredAt: ca.createdAt,
         daysPending: Math.floor(
-          (new Date() - new Date(ca.createdAt)) / (1000 * 60 * 60 * 24)
+          (new Date() - new Date(ca.createdAt)) / (1000 * 60 * 60 * 24),
         ),
       }));
 
@@ -135,19 +119,27 @@ class AdminService {
         email,
         phone,
         location,
-        specializations = [],
         autoVerify = false,
+        caNumber,
+        caTypeId,
+        commissionPercentage,
       } = caData;
 
       // Check if CA already exists
       const existingCA = await CA.findOne({
         where: {
-          [Op.or]: [{ email }, { phone }],
+          [Op.or]: [
+            { email },
+            { phone },
+            caNumber ? { caNumber } : null,
+          ].filter(Boolean),
         },
       });
 
       if (existingCA) {
-        throw new Error("CA with this email or phone already exists");
+        throw new Error(
+          "CA with this email, phone or CA number already exists",
+        );
       }
 
       // Create CA account
@@ -156,6 +148,11 @@ class AdminService {
         email,
         phone,
         location,
+        caNumber,
+        caTypeId,
+        commissionPercentage: commissionPercentage
+          ? parseFloat(commissionPercentage)
+          : undefined,
         verified: autoVerify,
         phoneVerified: true, // Admin registered CAs are phone verified
         status: "active",
@@ -165,17 +162,6 @@ class AdminService {
           registrationType: "admin",
         },
       });
-
-      // Add specializations if provided
-      if (specializations.length > 0) {
-        const CASpecialization = require("../../models").CASpecialization;
-        for (const specializationName of specializations) {
-          await CASpecialization.create({
-            caId: ca.id,
-            name: specializationName,
-          });
-        }
-      }
 
       return await this.getCADetails(ca.id);
     } catch (error) {
@@ -538,7 +524,7 @@ class AdminService {
         priority: req.priority,
         escalatedAt: req.escalatedAt,
         daysSinceEscalation: Math.floor(
-          (new Date() - new Date(req.escalatedAt)) / (1000 * 60 * 60 * 24)
+          (new Date() - new Date(req.escalatedAt)) / (1000 * 60 * 60 * 24),
         ),
         createdAt: req.createdAt,
       }));
@@ -636,7 +622,7 @@ class AdminService {
             paymentType: "service_fee",
             createdAt: {
               [Op.gte]: new Date(
-                new Date().setMonth(new Date().getMonth() - 1)
+                new Date().setMonth(new Date().getMonth() - 1),
               ),
             },
           },
@@ -676,7 +662,7 @@ class AdminService {
         },
         quality: {
           averageRating: parseFloat(
-            averageRating?.dataValues?.avgRating || 0
+            averageRating?.dataValues?.avgRating || 0,
           ).toFixed(1),
           totalReviews: await Review.count(),
         },

@@ -59,12 +59,6 @@ npm run migrate
 - Fields: name, email, phone, location, image, verified, completedFilings, phoneVerified, googleUid
 - **Note**: Rating and reviewCount are computed dynamically from Reviews table (not stored)
 
-### CASpecializations Table
-
-- Maps CAs to their specializations with experience and fees per specialization
-- Fields: caId, specialization, experience, fees, isActive
-- **Why?** A CA can have multiple specializations with different expertise and pricing
-
 ### CAAvailability Table
 
 - Stores CA availability schedules (day of week and time slots)
@@ -111,7 +105,6 @@ backend/
 ├── models/          # Sequelize models
 │   ├── user.js
 │   ├── ca.js
-│   ├── caSpecialization.js
 │   ├── caAvailability.js
 │   ├── review.js
 │   └── index.js
@@ -135,7 +128,7 @@ Key points:
 
 - **Normalized design** - No data duplication
 - **Computed ratings** - Ratings calculated from Reviews table, not stored
-- **Flexible relationships** - CAs can have multiple specializations and availability slots
+- **Flexible relationships** - CAs can have multiple availability slots
 - **Data integrity** - Single source of truth for all data
 
 ## Technologies

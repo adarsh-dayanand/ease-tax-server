@@ -219,11 +219,11 @@ paths:
                 location:
                   type: string
                   example: "Mumbai, Maharashtra"
-                specializations:
+                qualifications:
                   type: array
                   items:
                     type: string
-                  example: ["Income Tax", "GST"]
+                  example: ["Chartered Accountant", "Tax Consultant"]
                 documents:
                   type: array
                   items:
@@ -636,11 +636,6 @@ paths:
           schema:
             type: string
           description: Filter by location
-        - name: specialization
-          in: query
-          schema:
-            type: string
-          description: Filter by specialization
         - name: minRating
           in: query
           schema:
@@ -1763,10 +1758,11 @@ paths:
                   format: uuid
                   description: CA type ID from ca_types table
                   example: "550e8400-e29b-41d4-a716-446655440000"
-                specializations:
+                qualifications:
                   type: array
                   items:
                     type: string
+                  example: ["Chartered Accountant"]
                 autoVerify:
                   type: boolean
                   default: false
@@ -3676,9 +3672,6 @@ components:
         name:
           type: string
           example: "CA Rajesh Kumar"
-        specialization:
-          type: string
-          example: "Income Tax & GST"
         experience:
           type: string
           example: "8 years"
@@ -4131,17 +4124,6 @@ components:
             avgCompletionTime: "5-7 days"
           description: "Additional metadata for service template"
 
-    Specialization:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        name:
-          type: string
-          example: "Income Tax"
-        description:
-          type: string
 
     AvailabilitySlot:
       type: object
@@ -4173,8 +4155,6 @@ components:
         caImage:
           type: string
           nullable: true
-        caSpecialization:
-          type: string
         date:
           type: string
           format: date
@@ -4520,7 +4500,6 @@ components:
         type:
           type: string
           enum:
-            - info
             - success
             - warning
             - error
