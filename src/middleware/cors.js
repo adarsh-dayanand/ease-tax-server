@@ -35,10 +35,14 @@ const getCorsOptions = () => {
   const allowedOrigins = [
     frontendUrl,
     websocketOrigin,
+    "*",
     // Add production domains here
-    "https://easetax.com",
-    "https://www.easetax.com",
-    "https://app.easetax.com",
+    "https://easetax.co.in",
+    "https://www.easetax.co.in",
+    "https://app.easetax.co.in",
+    "http://easetax.co.in",
+    "http://www.easetax.co.in",
+    "http://app.easetax.co.in",
   ].filter(Boolean);
 
   return {
@@ -141,7 +145,10 @@ const dynamicCors = (req, res, next) => {
 
   // Upload routes - only for POST requests
   // For DELETE/GET requests on document routes, use apiCors
-  if ((path.includes("/upload") || path.includes("/document")) && method === "POST") {
+  if (
+    (path.includes("/upload") || path.includes("/document")) &&
+    method === "POST"
+  ) {
     return uploadCors(req, res, next);
   }
 
@@ -188,7 +195,7 @@ const handlePreflightOptions = (req, res, next) => {
       res.header("Access-Control-Max-Age", "86400"); // 24 hours
       res.header(
         "Vary",
-        "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+        "Origin, Access-Control-Request-Method, Access-Control-Request-Headers",
       );
 
       return res.status(200).end();
@@ -211,7 +218,7 @@ const corsSecurityHeaders = (req, res, next) => {
   if (process.env.NODE_ENV === "production") {
     res.header(
       "Strict-Transport-Security",
-      "max-age=31536000; includeSubDomains; preload"
+      "max-age=31536000; includeSubDomains; preload",
     );
   }
 

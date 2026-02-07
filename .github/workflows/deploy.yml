@@ -110,6 +110,7 @@ jobs:
             AWS_S3_BUCKET=${{ secrets.AWS_S3_BUCKET }}
             REDIS_HOST=${{ secrets.REDIS_HOST }}
             REDIS_PORT=${{ env.REDIS_PORT }}
+            FRONTEND_URL=${{ secrets.FRONTEND_URL }}
 
       - name: Fill in the Nginx proxy image in the Amazon ECS task definition
         id: render-proxy
