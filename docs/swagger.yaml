@@ -45,7 +45,7 @@ info:
 servers:
   - url: http://localhost:3000/api
     description: Development server
-  - url: https://service.easetax.com/api
+  - url: https://service.easetax.co.in/api
     description: Production server
 
 security:
