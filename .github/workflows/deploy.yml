@@ -48,6 +48,20 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
+      - name: Build, tag, and push Nginx proxy image to Amazon ECR
+        id: build-proxy-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+          PROXY_REPOSITORY: ease-tax-backend-proxy
+        run: |
+          # Create ECR repository if it doesn't exist
+          aws ecr describe-repositories --repository-names $PROXY_REPOSITORY || aws ecr create-repository --repository-name $PROXY_REPOSITORY
+
+          docker build -f Dockerfile.nginx -t $ECR_REGISTRY/$PROXY_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$PROXY_REPOSITORY:$IMAGE_TAG
+          echo "image=$ECR_REGISTRY/$PROXY_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
       - name: Fill in the new image ID in the Amazon ECS task definition
         id: task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
@@ -97,10 +111,18 @@ jobs:
             REDIS_HOST=${{ secrets.REDIS_HOST }}
             REDIS_PORT=${{ env.REDIS_PORT }}
 
+      - name: Fill in the Nginx proxy image in the Amazon ECS task definition
+        id: render-proxy
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          container-name: nginx-proxy
+          image: ${{ steps.build-proxy-image.outputs.image }}
+
       - name: Deploy Amazon ECS task definition
         uses: aws-actions/amazon-ecs-deploy-task-definition@v2
         with:
-          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          task-definition: ${{ steps.render-proxy.outputs.task-definition }}
           service: ${{ env.ECS_SERVICE }}
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
