@@ -5,6 +5,7 @@ const {
   Payment,
   Document,
   Meeting,
+  sequelize,
 } = require("../../models");
 const cacheService = require("./cacheService");
 const vcSchedulingService = require("./vcSchedulingService");
