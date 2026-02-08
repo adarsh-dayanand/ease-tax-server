@@ -25,25 +25,32 @@ class RedisManager {
         socket: {
           host: process.env.REDIS_HOST || "localhost",
           port: parseInt(process.env.REDIS_PORT) || 6379,
-          connectTimeout: 5000, // 5 seconds timeout for connection
+          connectTimeout: 10000, // 10 seconds timeout for initial connection
           reconnectStrategy: (retries) => {
             logger.warn(`[Redis] Reconnection attempt ${retries}`, {
-              maxRetries: 5,
-              nextRetryIn: Math.min(retries * 500, 3000),
+              maxRetries: 10,
+              nextRetryIn: Math.min(retries * 1000, 5000),
             });
-            if (retries > 5) {
+            if (retries > 10) {
               logger.error(
                 "[Redis] Max retry attempts reached, disabling cache",
               );
-              return false;
+              this.isConnected = false;
+              return false; // Stop reconnecting
             }
-            return Math.min(retries * 500, 3000);
+            // Exponential backoff: 1s, 2s, 3s, 4s, 5s (max)
+            return Math.min(retries * 1000, 5000);
           },
+          // Keep connection alive
+          keepAlive: 5000,
+          noDelay: true,
         },
         password: process.env.REDIS_PASSWORD || undefined,
         database: parseInt(process.env.REDIS_DB) || 0,
-        // Add command timeout to prevent hanging on slow queries
-        commandTimeout: 3000,
+        // Increase command timeout to prevent premature disconnections
+        commandTimeout: 5000, // 5 seconds for commands
+        // Don't connect immediately, wait for explicit connect() call
+        lazyConnect: false,
       });
 
       this.client.on("error", (error) => {

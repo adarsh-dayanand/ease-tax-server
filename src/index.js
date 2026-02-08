@@ -161,16 +161,44 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start
-server.listen(PORT, () => {
+// Start server
+server.listen(PORT, async () => {
   console.log(`🚀 SERVER RUNNING on http://localhost:${PORT}`);
   logger.info(`Server started on port ${PORT}`);
+
+  // Initialize WebSocket
+  logger.info("WebSocket service initialized");
+
+  // Connect to Redis asynchronously (don't block server startup)
+  connectRedis()
+    .then(() => {
+      logger.info("Redis initialization complete");
+    })
+    .catch((error) => {
+      logger.error(
+        "Redis initialization failed, server will run without cache:",
+        {
+          message: error.message,
+          code: error.code,
+        },
+      );
+      // Server continues running without Redis
+    });
 });
 
-const gracefulShutdown = (signal) => {
-  console.log(`\n${signal} received. Shutting down...`);
-  server.close(() => process.exit(0));
-};
+// Graceful shutdown
+process.on("SIGTERM", () => {
+  logger.info("SIGTERM signal received: closing HTTP server");
+  server.close(() => {
+    logger.info("HTTP server closed");
+    process.exit(0);
+  });
+});
 
-process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("SIGINT", () => {
+  logger.info("SIGINT signal received: closing HTTP server");
+  server.close(() => {
+    logger.info("HTTP server closed");
+    process.exit(0);
+  });
+});
