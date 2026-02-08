@@ -91,59 +91,76 @@ class CAService {
           subQuery: false,
         });
 
+        // CRITICAL FIX: Get all completion counts in a single query to avoid N+1 problem
+        const caIds = rows.map((ca) => ca.id);
+        const completionCounts = await ServiceRequest.findAll({
+          where: {
+            caId: { [Op.in]: caIds },
+            status: "completed",
+          },
+          attributes: [
+            "caId",
+            [sequelize.fn("COUNT", sequelize.col("id")), "count"],
+          ],
+          group: ["caId"],
+          raw: true,
+        });
+
+        // Create a map for O(1) lookup
+        const completionCountMap = new Map();
+        completionCounts.forEach((item) => {
+          completionCountMap.set(item.caId, parseInt(item.count) || 0);
+        });
+
         // Transform the results and calculate aggregated data
-        const transformedCAs = await Promise.all(
-          rows.map(async (ca) => {
-            const reviews = ca.reviews || [];
-            const caServices = ca.caServices || [];
+        const transformedCAs = rows.map((ca) => {
+          const reviews = ca.reviews || [];
+          const caServices = ca.caServices || [];
 
-            // Calculate average rating
-            const averageRating =
-              reviews.length > 0
-                ? reviews.reduce((sum, review) => sum + review.rating, 0) /
-                  reviews.length
-                : 0;
+          // Calculate average rating
+          const averageRating =
+            reviews.length > 0
+              ? reviews.reduce((sum, review) => sum + review.rating, 0) /
+                reviews.length
+              : 0;
 
-            // Get completed consultations count
-            const completedConsultations = await ServiceRequest.count({
-              where: { caId: ca.id, status: "completed" },
-            });
+          // Get completed consultations from our map (no extra query!)
+          const completedConsultations = completionCountMap.get(ca.id) || 0;
 
-            // Get the lowest custom price or calculate from services
-            let basePrice = null; // default
-            let currency = "INR";
+          // Get the lowest custom price or calculate from services
+          let basePrice = null; // default
+          let currency = "INR";
 
-            if (caServices.length > 0) {
-              const prices = caServices
-                .map((service) => service.customPrice)
-                .filter((price) => price != null);
-              if (prices.length > 0) {
-                basePrice = Math.min(...prices);
-              }
-              currency = caServices[0].currency || "INR";
+          if (caServices.length > 0) {
+            const prices = caServices
+              .map((service) => service.customPrice)
+              .filter((price) => price != null);
+            if (prices.length > 0) {
+              basePrice = Math.min(...prices);
             }
+            currency = caServices[0].currency || "INR";
+          }
 
-            return {
-              id: ca.id,
-              name: ca.name,
-              specialization: ca.qualifications?.join(", ") || "Tax Consultant",
-              experience: `${ca.experienceYears || 0} years`,
-              rating: Number(averageRating.toFixed(1)) || 0,
-              reviewCount: reviews.length,
-              location: ca.location || "India",
-              price: `₹${basePrice.toLocaleString("en-IN")}`,
-              currency: currency,
-              profileImage: ca.profileImage,
-              completedFilings: completedConsultations,
-              phone: ca.phone,
-              email: ca.email,
-              bio: ca.bio,
-              qualifications: ca.qualifications || [],
-              languages: ca.languages || [],
-              verified: true, // Only active CAs are shown
-            };
-          }),
-        );
+          return {
+            id: ca.id,
+            name: ca.name,
+            specialization: ca.qualifications?.join(", ") || "Tax Consultant",
+            experience: `${ca.experienceYears || 0} years`,
+            rating: Number(averageRating.toFixed(1)) || 0,
+            reviewCount: reviews.length,
+            location: ca.location || "India",
+            price: `₹${basePrice.toLocaleString("en-IN")}`,
+            currency: currency,
+            profileImage: ca.profileImage,
+            completedFilings: completedConsultations,
+            phone: ca.phone,
+            email: ca.email,
+            bio: ca.bio,
+            qualifications: ca.qualifications || [],
+            languages: ca.languages || [],
+            verified: true, // Only active CAs are shown
+          };
+        });
 
         result = {
           data: transformedCAs,

@@ -118,13 +118,18 @@ class NotificationService {
           limit,
           offset,
           order: [["createdAt", "DESC"]],
-          include: [
-            {
-              model: ServiceRequest,
-              as: "serviceRequest",
-              required: false,
-              attributes: ["id", "status", "purpose"],
-            },
+          attributes: [
+            "id",
+            "title",
+            "message",
+            "notificationType",
+            "priority",
+            "actionUrl",
+            "actionText",
+            "serviceRequestId",
+            "isRead",
+            "readAt",
+            "createdAt",
           ],
         });
 
@@ -146,13 +151,6 @@ class NotificationService {
             isRead: notification.isRead,
             readAt: notification.readAt,
             createdAt: notification.createdAt,
-            serviceRequest: notification.serviceRequest
-              ? {
-                  id: notification.serviceRequest.id,
-                  status: notification.serviceRequest.status,
-                  purpose: notification.serviceRequest.purpose,
-                }
-              : null,
           })),
           pagination: {
             page,

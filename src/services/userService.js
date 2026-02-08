@@ -121,22 +121,12 @@ class UserService {
             {
               model: require("../../models").CAService,
               as: "caService",
-              attributes: [
-                "id",
-                "customPrice",
-                "currency",
-                "experienceLevel",
-              ],
+              attributes: ["id", "customPrice", "currency", "experienceLevel"],
             },
             {
               model: require("../../models").Payment,
               as: "payments",
-              attributes: [
-                "id",
-                "amount",
-                "status",
-                "paymentType",
-              ],
+              attributes: ["id", "amount", "status", "paymentType"],
             },
           ],
         });
@@ -210,7 +200,7 @@ class UserService {
             {
               model: require("../../models").CA,
               as: "ca",
-              attributes: ["id", "name", "location"],
+              attributes: ["id", "name"],
             },
           ],
         });
@@ -221,7 +211,6 @@ class UserService {
             year: this.getTaxYear(sr.createdAt),
             status: sr.status,
             ca: sr.ca?.name || "CA Name",
-            caLocation: sr.ca?.location,
             filedDate: sr.completedAt,
             refundAmount: sr.finalAmount ? `₹${sr.finalAmount}` : "TBD",
             serviceType: sr.serviceType,
@@ -355,7 +344,7 @@ class UserService {
     if (!payments || payments.length === 0) return "unpaid";
 
     const hasSuccessfulPayment = payments.some(
-      (p) => p.status === "success" || p.status === "completed"
+      (p) => p.status === "success" || p.status === "completed",
     );
     const hasPendingPayment = payments.some((p) => p.status === "pending");
 

@@ -18,206 +18,245 @@ class CAManagementService {
    */
   async getCADashboard(caId) {
     try {
+      const startTime = Date.now();
+      logger.info(`[Dashboard] Starting dashboard fetch for CA: ${caId}`);
+
       const cacheKey = cacheService.getCacheKeys().CA_DASHBOARD(caId);
       let dashboard = await cacheService.get(cacheKey);
 
-      if (!dashboard) {
-        // Get basic stats and data in parallel
-        const [statusCountsRaw, paymentsForEarnings, avgRating, ca] =
-          await Promise.all([
-            // Consolidate 4 count queries into 1 grouped query
-            ServiceRequest.findAll({
-              where: { caId },
-              attributes: [
-                "status",
-                [sequelize.fn("COUNT", sequelize.col("id")), "count"],
-              ],
-              group: ["status"],
-              raw: true,
-            }),
-            Payment.findAll({
-              where: {
-                payeeId: caId,
-                status: "completed",
-                paymentType: "service_fee",
+      if (dashboard) {
+        logger.info(
+          `[Dashboard] Cache hit for CA: ${caId} (${Date.now() - startTime}ms)`,
+        );
+        return dashboard;
+      }
+
+      logger.info(`[Dashboard] Cache miss, fetching from DB for CA: ${caId}`);
+      const dbStartTime = Date.now();
+
+      // Get basic stats and data in parallel
+      const [statusCountsRaw, paymentsForEarnings, avgRating, ca] =
+        await Promise.all([
+          // Consolidate 4 count queries into 1 grouped query
+          ServiceRequest.findAll({
+            where: { caId },
+            attributes: [
+              "status",
+              [sequelize.fn("COUNT", sequelize.col("id")), "count"],
+            ],
+            group: ["status"],
+            raw: true,
+          }),
+          Payment.findAll({
+            where: {
+              payeeId: caId,
+              status: "completed",
+              paymentType: "service_fee",
+            },
+            attributes: [
+              "id",
+              "amount",
+              "commissionAmount",
+              "netAmount",
+              "commissionPercentage",
+              "metadata",
+            ],
+            raw: true,
+          }),
+          this.getCAAvgRating(caId),
+          CA.findByPk(caId, {
+            include: [
+              {
+                model: require("../../models").CAService,
+                as: "caServices",
+                where: { isActive: true },
+                required: false,
               },
-              attributes: [
-                "id",
-                "amount",
-                "commissionAmount",
-                "netAmount",
-                "commissionPercentage",
-                "metadata",
-              ],
-              raw: true,
-            }),
-            this.getCAAvgRating(caId),
-            CA.findByPk(caId, {
-              include: [
-                {
-                  model: require("../../models").CAService,
-                  as: "caServices",
-                  where: { isActive: true },
-                  required: false,
-                },
-              ],
-            }),
-          ]);
+            ],
+          }),
+        ]);
 
-        // Process status counts
-        const counts = {
-          total: 0,
-          pending: 0,
-          accepted: 0,
-          in_progress: 0,
-          completed: 0,
-          rejected: 0,
-          cancelled: 0,
-        };
+      logger.info(
+        `[Dashboard] Parallel queries completed for CA: ${caId} (${Date.now() - dbStartTime}ms)`,
+      );
 
-        statusCountsRaw.forEach((item) => {
-          const count = parseInt(item.count, 10) || 0;
-          counts[item.status] = count;
-          counts.total += count;
-        });
+      // Process status counts
+      const countsStartTime = Date.now();
+      const counts = {
+        total: 0,
+        pending: 0,
+        accepted: 0,
+        in_progress: 0,
+        completed: 0,
+        rejected: 0,
+        cancelled: 0,
+      };
 
-        const totalRequests = counts.total;
-        const pendingRequests = counts.pending;
-        const acceptedRequests =
-          counts.pending + counts.accepted + counts.in_progress;
-        const completedRequests = counts.completed;
+      statusCountsRaw.forEach((item) => {
+        const count = parseInt(item.count, 10) || 0;
+        counts[item.status] = count;
+        counts.total += count;
+      });
 
-        // Log counts for debugging
-        logger.info(`CA Dashboard counts for ${caId}:`, {
+      const totalRequests = counts.total;
+      const pendingRequests = counts.pending;
+      const acceptedRequests =
+        counts.pending + counts.accepted + counts.in_progress;
+      const completedRequests = counts.completed;
+
+      // Log counts for debugging
+      logger.info(
+        `[Dashboard] Status counts processed for CA: ${caId} (${Date.now() - countsStartTime}ms)`,
+        {
           totalRequests,
           pendingRequests,
           acceptedRequests,
           completedRequests,
-        });
+        },
+      );
 
-        // Calculate total earnings from payments
-        // IMPORTANT: Commission should be calculated on FULL SERVICE PRICE (totalAmount), not on (servicePrice - bookingFee)
-        const caCommissionPercentage =
-          parseFloat(ca?.commissionPercentage) || 8.0;
-        const bookingFee = 999;
+      // Calculate total earnings from payments
+      // IMPORTANT: Commission should be calculated on FULL SERVICE PRICE (totalAmount), not on (servicePrice - bookingFee)
+      const earningsStartTime = Date.now();
+      const caCommissionPercentage =
+        parseFloat(ca?.commissionPercentage) || 8.0;
+      const bookingFee = 999;
 
-        const totalEarnings = paymentsForEarnings.reduce((sum, payment) => {
-          // If netAmount is already calculated and stored, we could use it,
-          // but we follow current logic for precision as requested.
-          const amount = parseFloat(payment.amount) || 0;
+      const totalEarnings = paymentsForEarnings.reduce((sum, payment) => {
+        // If netAmount is already calculated and stored, we could use it,
+        // but we follow current logic for precision as requested.
+        const amount = parseFloat(payment.amount) || 0;
 
-          // Extract service price (totalAmount) from metadata
-          let servicePrice = null;
-          if (payment.metadata) {
-            try {
-              const metadata =
-                typeof payment.metadata === "string"
-                  ? JSON.parse(payment.metadata)
-                  : payment.metadata;
+        // Extract service price (totalAmount) from metadata
+        let servicePrice = null;
+        if (payment.metadata) {
+          try {
+            const metadata =
+              typeof payment.metadata === "string"
+                ? JSON.parse(payment.metadata)
+                : payment.metadata;
 
-              if (metadata.totalAmount) {
-                servicePrice = parseFloat(metadata.totalAmount) || 0;
-              }
-            } catch (e) {
-              logger.warn("Failed to parse payment metadata", {
-                paymentId: payment.id,
-                error: e.message,
-              });
+            if (metadata.totalAmount) {
+              servicePrice = parseFloat(metadata.totalAmount) || 0;
             }
+          } catch (e) {
+            logger.warn("Failed to parse payment metadata", {
+              paymentId: payment.id,
+              error: e.message,
+            });
           }
+        }
 
-          // If servicePrice not found in metadata, calculate it from amount
-          // amount = (servicePrice - bookingFee) + GST
-          // amount = (servicePrice - 999) * 1.18
-          // So: servicePrice = (amount / 1.18) + 999
-          if (!servicePrice || servicePrice <= 0) {
-            const baseFinalAmount = amount / 1.18; // Remove GST to get (servicePrice - bookingFee)
-            servicePrice = baseFinalAmount + bookingFee;
-          }
+        // If servicePrice not found in metadata, calculate it from amount
+        // amount = (servicePrice - bookingFee) + GST
+        // amount = (servicePrice - 999) * 1.18
+        // So: servicePrice = (amount / 1.18) + 999
+        if (!servicePrice || servicePrice <= 0) {
+          const baseFinalAmount = amount / 1.18; // Remove GST to get (servicePrice - bookingFee)
+          servicePrice = baseFinalAmount + bookingFee;
+        }
 
-          // Calculate net amount correctly: servicePrice - commission on servicePrice
-          // Commission should be calculated on full servicePrice, not on (servicePrice - bookingFee)
-          const paymentCommissionPercentage =
-            parseFloat(payment.commissionPercentage) || caCommissionPercentage;
-          const commission = (servicePrice * paymentCommissionPercentage) / 100;
-          const netAmount = servicePrice - commission;
+        // Calculate net amount correctly: servicePrice - commission on servicePrice
+        // Commission should be calculated on full servicePrice, not on (servicePrice - bookingFee)
+        const paymentCommissionPercentage =
+          parseFloat(payment.commissionPercentage) || caCommissionPercentage;
+        const commission = (servicePrice * paymentCommissionPercentage) / 100;
+        const netAmount = servicePrice - commission;
 
-          logger.debug("Earnings calculation", {
-            paymentId: payment.id,
-            amount,
-            servicePrice,
-            commissionPercentage: paymentCommissionPercentage,
-            commission,
-            netAmount,
-          });
-
-          return sum + (parseFloat(netAmount) || 0);
-        }, 0);
-
-        // Get recent requests
-        const recentRequests = await ServiceRequest.findAll({
-          where: { caId },
-          limit: 5,
-          order: [["createdAt", "DESC"]],
-          include: [
-            {
-              model: User,
-              as: "user",
-              attributes: ["id", "name", "profileImage"],
-            },
-          ],
+        logger.debug("Earnings calculation", {
+          paymentId: payment.id,
+          amount,
+          servicePrice,
+          commissionPercentage: paymentCommissionPercentage,
+          commission,
+          netAmount,
         });
 
-        // Get rating distribution
-        const ratingDistribution =
-          await caService.getCARatingDistribution(caId);
+        return sum + (parseFloat(netAmount) || 0);
+      }, 0);
 
-        dashboard = {
-          ca: {
-            id: ca.id,
-            name: ca.name,
-            image: ca.image,
-            verified: ca.verified,
-            completedFilings: ca.completedFilings,
-            specializations:
-              ca.specializations?.map((s) => s.specialization) || [],
-          },
-          stats: {
-            totalRequests: totalRequests || 0,
-            pendingRequests: pendingRequests || 0,
-            acceptedRequests: acceptedRequests || 0,
-            completedRequests: completedRequests || 0,
-            totalEarnings: totalEarnings || 0,
-            avgRating: avgRating || 0,
-            successRate: (() => {
-              // Calculate success rate excluding pending requests
-              // Only consider approved (accepted/in_progress), rejected, and completed requests
-              const processedRequests = totalRequests - pendingRequests;
-              return processedRequests > 0
-                ? ((completedRequests / processedRequests) * 100).toFixed(1)
-                : "0.0";
-            })(),
-            ratingDistribution: ratingDistribution || [
-              { rating: 5, count: 0 },
-              { rating: 4, count: 0 },
-              { rating: 3, count: 0 },
-              { rating: 2, count: 0 },
-              { rating: 1, count: 0 },
-            ],
-          },
-          recentRequests: recentRequests.map((req) => ({
-            id: req.id,
-            userName: req.user?.name || "Unknown User",
-            userImage: req.user?.profileImage,
-            purpose: req.purpose,
-            status: req.status,
-            createdAt: req.createdAt,
-          })),
-        };
+      logger.info(
+        `[Dashboard] Earnings calculated for CA: ${caId} (${Date.now() - earningsStartTime}ms)`,
+        {
+          paymentCount: paymentsForEarnings.length,
+          totalEarnings,
+        },
+      );
 
-        // Cache for 10 minutes
-        await cacheService.set(cacheKey, dashboard, 600);
-      }
+      // Get recent requests
+      const recentRequestsStartTime = Date.now();
+      const recentRequests = await ServiceRequest.findAll({
+        where: { caId },
+        limit: 5,
+        order: [["createdAt", "DESC"]],
+        include: [
+          {
+            model: User,
+            as: "user",
+            attributes: ["id", "name", "profileImage"],
+          },
+        ],
+      });
+      logger.info(
+        `[Dashboard] Recent requests fetched for CA: ${caId} (${Date.now() - recentRequestsStartTime}ms)`,
+      );
+
+      // Get rating distribution
+      const ratingStartTime = Date.now();
+      const ratingDistribution = await caService.getCARatingDistribution(caId);
+      logger.info(
+        `[Dashboard] Rating distribution fetched for CA: ${caId} (${Date.now() - ratingStartTime}ms)`,
+      );
+
+      dashboard = {
+        ca: {
+          id: ca.id,
+          name: ca.name,
+          image: ca.image,
+          verified: ca.verified,
+          completedFilings: ca.completedFilings,
+          specializations:
+            ca.specializations?.map((s) => s.specialization) || [],
+        },
+        stats: {
+          totalRequests: totalRequests || 0,
+          pendingRequests: pendingRequests || 0,
+          acceptedRequests: acceptedRequests || 0,
+          completedRequests: completedRequests || 0,
+          totalEarnings: totalEarnings || 0,
+          avgRating: avgRating || 0,
+          successRate: (() => {
+            // Calculate success rate excluding pending requests
+            // Only consider approved (accepted/in_progress), rejected, and completed requests
+            const processedRequests = totalRequests - pendingRequests;
+            return processedRequests > 0
+              ? ((completedRequests / processedRequests) * 100).toFixed(1)
+              : "0.0";
+          })(),
+          ratingDistribution: ratingDistribution || [
+            { rating: 5, count: 0 },
+            { rating: 4, count: 0 },
+            { rating: 3, count: 0 },
+            { rating: 2, count: 0 },
+            { rating: 1, count: 0 },
+          ],
+        },
+        recentRequests: recentRequests.map((req) => ({
+          id: req.id,
+          userName: req.user?.name || "Unknown User",
+          userImage: req.user?.profileImage,
+          purpose: req.purpose,
+          status: req.status,
+          createdAt: req.createdAt,
+        })),
+      };
+
+      logger.info(
+        `[Dashboard] Dashboard built successfully for CA: ${caId}, total time: ${Date.now() - startTime}ms`,
+      );
+
+      // Cache for 10 minutes
+      await cacheService.set(cacheKey, dashboard, 600);
 
       return dashboard;
     } catch (error) {
