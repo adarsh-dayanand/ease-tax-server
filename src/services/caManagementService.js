@@ -36,50 +36,71 @@ class CAManagementService {
       const dbStartTime = Date.now();
 
       // Get basic stats and data in parallel
-      const [statusCountsRaw, paymentsForEarnings, avgRating, ca] =
-        await Promise.all([
-          // Consolidate 4 count queries into 1 grouped query
-          ServiceRequest.findAll({
-            where: { caId },
-            attributes: [
-              "status",
-              [sequelize.fn("COUNT", sequelize.col("id")), "count"],
-            ],
-            group: ["status"],
-            raw: true,
-          }),
-          Payment.findAll({
-            where: {
-              payeeId: caId,
-              status: "completed",
-              paymentType: "service_fee",
-            },
-            attributes: [
-              "id",
-              "amount",
-              "commissionAmount",
-              "netAmount",
-              "commissionPercentage",
-              "metadata",
-            ],
-            raw: true,
-          }),
-          this.getCAAvgRating(caId),
-          CA.findByPk(caId, {
-            include: [
-              {
-                model: require("../../models").CAService,
-                as: "caServices",
-                where: { isActive: true },
-                required: false,
-              },
-            ],
-          }),
-        ]);
+      let statusCountsRaw, paymentsForEarnings, avgRating, ca;
+      try {
+        logger.info(`[Dashboard] Starting parallel queries for CA: ${caId}`);
 
-      logger.info(
-        `[Dashboard] Parallel queries completed for CA: ${caId} (${Date.now() - dbStartTime}ms)`,
-      );
+        [statusCountsRaw, paymentsForEarnings, avgRating, ca] =
+          await Promise.all([
+            // Consolidate 4 count queries into 1 grouped query
+            ServiceRequest.findAll({
+              where: { caId },
+              attributes: [
+                "status",
+                [sequelize.fn("COUNT", sequelize.col("id")), "count"],
+              ],
+              group: ["status"],
+              raw: true,
+            }).catch((err) => {
+              logger.error(
+                `[Dashboard] Status counts query failed for CA: ${caId}`,
+                {
+                  error: err.message,
+                  stack: err.stack,
+                },
+              );
+              throw err;
+            }),
+            Payment.findAll({
+              where: {
+                payeeId: caId,
+                status: "completed",
+                paymentType: "service_fee",
+              },
+              attributes: [
+                "id",
+                "amount",
+                "commissionAmount",
+                "netAmount",
+                "commissionPercentage",
+                "metadata",
+              ],
+              raw: true,
+            }),
+            this.getCAAvgRating(caId),
+            CA.findByPk(caId, {
+              include: [
+                {
+                  model: require("../../models").CAService,
+                  as: "caServices",
+                  where: { isActive: true },
+                  required: false,
+                },
+              ],
+            }),
+          ]);
+
+        logger.info(
+          `[Dashboard] Parallel queries completed for CA: ${caId} (${Date.now() - dbStartTime}ms)`,
+        );
+      } catch (error) {
+        logger.error(`[Dashboard] Parallel queries failed for CA: ${caId}`, {
+          error: error.message,
+          stack: error.stack,
+          caId,
+        });
+        throw error;
+      }
 
       // Process status counts
       const countsStartTime = Date.now();
