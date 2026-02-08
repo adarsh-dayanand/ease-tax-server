@@ -54,7 +54,7 @@ class CAService {
                   ? [
                       sequelize.fn(
                         "MIN",
-                        sequelize.col("caServices.customPrice")
+                        sequelize.col("caServices.customPrice"),
                       ),
                       "ASC",
                     ]
@@ -142,7 +142,7 @@ class CAService {
               languages: ca.languages || [],
               verified: true, // Only active CAs are shown
             };
-          })
+          }),
         );
 
         result = {
@@ -203,10 +203,16 @@ class CAService {
           return null;
         }
 
-        // Get CA services separately to handle multiple entries for same service
-        let caServices = [];
-        try {
-          caServices = await CAServiceModel.findAll({
+        // Fetch all related data in parallel
+        const [
+          caServicesResult,
+          reviewsResult,
+          reviewStats,
+          completedFilingsResult,
+          ratingDistribution,
+        ] = await Promise.all([
+          // 1. Services
+          CAServiceModel.findAll({
             where: { caId, isActive: true },
             include: [
               {
@@ -222,16 +228,13 @@ class CAService {
                 ],
               },
             ],
-          });
-        } catch (error) {
-          logger.warn("Error getting CA services:", error.message);
-          caServices = [];
-        }
+          }).catch((err) => {
+            logger.warn("Error getting CA services:", err.message);
+            return [];
+          }),
 
-        // Get reviews separately - handle case where table doesn't exist
-        let reviews = [];
-        try {
-          reviews = await Review.findAll({
+          // 2. Recent Reviews
+          Review.findAll({
             where: { caId },
             limit: 10,
             order: [["createdAt", "DESC"]],
@@ -242,60 +245,41 @@ class CAService {
                 attributes: ["id", "name", "profileImage"],
               },
             ],
-          });
-        } catch (error) {
-          // If reviews table doesn't exist, continue with empty reviews
-          logger.warn(
-            "Reviews table not found, continuing without reviews:",
-            error.message
-          );
-          reviews = [];
-        }
+          }).catch((err) => {
+            logger.warn("Error getting CA reviews:", err.message);
+            return [];
+          }),
 
-        // Calculate average rating and total reviews
-        let averageRating = 0;
-        let totalReviews = 0;
-        try {
-          // Get total count of reviews
-          totalReviews = await Review.count({
+          // 3. Review Stats (Count and Average)
+          Review.findOne({
             where: { caId },
-          });
+            attributes: [
+              [sequelize.fn("COUNT", sequelize.col("id")), "totalReviews"],
+              [sequelize.fn("AVG", sequelize.col("rating")), "avgRating"],
+            ],
+            raw: true,
+          }).catch((err) => {
+            logger.warn("Error getting review stats:", err.message);
+            return { totalReviews: 0, avgRating: 0 };
+          }),
 
-          // Calculate average rating if there are reviews
-          if (totalReviews > 0) {
-            const ratingResult = await Review.findAll({
-              where: { caId },
-              attributes: [
-                [sequelize.fn("AVG", sequelize.col("rating")), "avgRating"],
-              ],
-              raw: true,
-            });
-
-            if (ratingResult && ratingResult.length > 0) {
-              const avgRatingValue = ratingResult[0]?.avgRating;
-              averageRating =
-                avgRatingValue != null ? parseFloat(avgRatingValue) || 0 : 0;
-            }
-          }
-        } catch (error) {
-          logger.warn("Error getting review stats:", error.message);
-          averageRating = 0;
-          totalReviews = 0;
-        }
-
-        // Get completed filings count
-        let completedFilings = 0;
-        try {
-          completedFilings = await ServiceRequest.count({
+          // 4. Completed Filings
+          ServiceRequest.count({
             where: { caId, status: "completed" },
-          });
-        } catch (error) {
-          logger.warn("Error getting completed filings count:", error.message);
-          completedFilings = 0;
-        }
+          }).catch((err) => {
+            logger.warn("Error getting completed filings count:", err.message);
+            return 0;
+          }),
 
-        // Get rating distribution
-        const ratingDistribution = await this.getCARatingDistribution(caId);
+          // 5. Rating Distribution
+          this.getCARatingDistribution(caId),
+        ]);
+
+        const caServices = caServicesResult || [];
+        const reviews = reviewsResult || [];
+        const totalReviews = parseInt(reviewStats?.totalReviews || 0, 10);
+        const averageRating = parseFloat(reviewStats?.avgRating || 0);
+        const completedFilings = completedFilingsResult || 0;
 
         caProfile = {
           id: ca.id,
@@ -303,9 +287,7 @@ class CAService {
           specialization: ca?.qualifications?.join(", ") || "Tax Consultant",
           experience: ca?.experienceYears,
           rating:
-            averageRating &&
-            typeof averageRating === "number" &&
-            !isNaN(averageRating)
+            averageRating && !isNaN(averageRating)
               ? Number(averageRating.toFixed(1))
               : 0,
           reviewCount: totalReviews,
@@ -327,7 +309,7 @@ class CAService {
               }
             : null,
           services:
-            caServices?.map((caService) => ({
+            caServices.map((caService) => ({
               id: caService.service.id,
               caServiceId: caService.id,
               name: caService.service.name,
@@ -342,7 +324,7 @@ class CAService {
               notes: caService.notes,
             })) || [],
           reviews:
-            reviews?.map((review) => ({
+            reviews.map((review) => ({
               id: review.id,
               name: review.user?.name,
               profileImage: review?.user?.profileImage,
@@ -446,7 +428,7 @@ class CAService {
 
       if (serviceRequest.userId !== userId) {
         throw new Error(
-          "Unauthorized: Service request does not belong to user"
+          "Unauthorized: Service request does not belong to user",
         );
       }
 
@@ -503,7 +485,7 @@ class CAService {
       await cacheService.del(cacheService.getCacheKeys().CA_REVIEWS(caId));
       await cacheService.del(cacheService.getCacheKeys().CA_PROFILE(caId));
       await cacheService.del(
-        cacheService.getCacheKeys().CA_RATING_DISTRIBUTION(caId)
+        cacheService.getCacheKeys().CA_RATING_DISTRIBUTION(caId),
       );
       await cacheService.del(cacheService.getCacheKeys().CA_DASHBOARD(caId));
 
@@ -663,7 +645,7 @@ class CAService {
           {
             replacements: { caId },
             type: QueryTypes.SELECT,
-          }
+          },
         );
 
         // Log raw results for debugging
@@ -700,7 +682,7 @@ class CAService {
             ) {
               // Find the correct element in the array - ensure both are numbers
               const distributionItem = ratingDistribution.find(
-                (dist) => Number(dist.rating) === Number(rating)
+                (dist) => Number(dist.rating) === Number(rating),
               );
               if (distributionItem) {
                 distributionItem.count = count;

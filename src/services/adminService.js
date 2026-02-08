@@ -150,9 +150,7 @@ class AdminService {
         location,
         caNumber,
         caTypeId,
-        commissionPercentage: commissionPercentage
-          ? parseFloat(commissionPercentage)
-          : undefined,
+        commissionPercentage: parseFloat(commissionPercentage),
         verified: autoVerify,
         phoneVerified: true, // Admin registered CAs are phone verified
         status: "active",

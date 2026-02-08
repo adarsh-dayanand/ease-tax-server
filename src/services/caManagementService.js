@@ -22,56 +22,70 @@ class CAManagementService {
       let dashboard = await cacheService.get(cacheKey);
 
       if (!dashboard) {
-        // Get basic stats
-        const [
-          totalRequests,
-          pendingRequests,
-          acceptedRequests,
-          completedRequests,
-          paymentsForEarnings,
-          avgRating,
-          ca,
-        ] = await Promise.all([
-          ServiceRequest.count({ where: { caId } }),
-          ServiceRequest.count({
-            where: { caId, status: "pending" },
-          }),
-          ServiceRequest.count({
-            where: {
-              caId,
-              status: { [Op.in]: ["pending", "accepted", "in_progress"] },
-            },
-          }),
-          ServiceRequest.count({
-            where: { caId, status: "completed" },
-          }),
-          Payment.findAll({
-            where: {
-              payeeId: caId,
-              status: "completed",
-              paymentType: "service_fee",
-            },
-            attributes: [
-              "id",
-              "amount",
-              "commissionAmount",
-              "netAmount",
-              "commissionPercentage",
-              "metadata",
-            ],
-            raw: true,
-          }),
-          this.getCAAvgRating(caId),
-          CA.findByPk(caId, {
-            include: [
-              {
-                model: require("../../models").CAService,
-                as: "caServices",
-                where: { isActive: true },
+        // Get basic stats and data in parallel
+        const [statusCountsRaw, paymentsForEarnings, avgRating, ca] =
+          await Promise.all([
+            // Consolidate 4 count queries into 1 grouped query
+            ServiceRequest.findAll({
+              where: { caId },
+              attributes: [
+                "status",
+                [sequelize.fn("COUNT", sequelize.col("id")), "count"],
+              ],
+              group: ["status"],
+              raw: true,
+            }),
+            Payment.findAll({
+              where: {
+                payeeId: caId,
+                status: "completed",
+                paymentType: "service_fee",
               },
-            ],
-          }),
-        ]);
+              attributes: [
+                "id",
+                "amount",
+                "commissionAmount",
+                "netAmount",
+                "commissionPercentage",
+                "metadata",
+              ],
+              raw: true,
+            }),
+            this.getCAAvgRating(caId),
+            CA.findByPk(caId, {
+              include: [
+                {
+                  model: require("../../models").CAService,
+                  as: "caServices",
+                  where: { isActive: true },
+                  required: false,
+                },
+              ],
+            }),
+          ]);
+
+        // Process status counts
+        const counts = {
+          total: 0,
+          pending: 0,
+          accepted: 0,
+          in_progress: 0,
+          completed: 0,
+          rejected: 0,
+          cancelled: 0,
+        };
+
+        statusCountsRaw.forEach((item) => {
+          const count = parseInt(item.count, 10) || 0;
+          counts[item.status] = count;
+          counts.total += count;
+        });
+
+        const totalRequests = counts.total;
+        const pendingRequests = counts.pending;
+        const acceptedRequests =
+          counts.pending + counts.accepted + counts.in_progress;
+        const completedRequests = counts.completed;
 
         // Log counts for debugging
         logger.info(`CA Dashboard counts for ${caId}:`, {
@@ -83,13 +97,14 @@ class CAManagementService {
 
         // Calculate total earnings from payments
         // IMPORTANT: Commission should be calculated on FULL SERVICE PRICE (totalAmount), not on (servicePrice - bookingFee)
-        // The payment.amount is (servicePrice - bookingFee) + GST
-        // But commission is calculated on the full servicePrice
         const caCommissionPercentage =
           parseFloat(ca?.commissionPercentage) || 8.0;
         const bookingFee = 999;
+
         const totalEarnings = paymentsForEarnings.reduce((sum, payment) => {
-          const amount = parseFloat(payment.amount) || 0; // This is (servicePrice - bookingFee) + GST
+          // If netAmount is already calculated and stored, we could use it,
+          // but we follow current logic for precision as requested.
+          const amount = parseFloat(payment.amount) || 0;
 
           // Extract service price (totalAmount) from metadata
           let servicePrice = null;
@@ -367,7 +382,7 @@ class CAManagementService {
         })),
         meeting: request.meeting || null,
         hasEscrowPayment: (request.payments || []).some(
-          (p) => p.paymentType === "booking_fee" && p.status === "completed"
+          (p) => p.paymentType === "booking_fee" && p.status === "completed",
         ),
       };
     } catch (error) {
@@ -613,7 +628,13 @@ class CAManagementService {
         throw new Error("CA not found");
       }
 
-      const allowedFields = ["name", "phone", "countryCode", "location", "image"];
+      const allowedFields = [
+        "name",
+        "phone",
+        "countryCode",
+        "location",
+        "image",
+      ];
 
       const filteredData = {};
       allowedFields.forEach((field) => {
@@ -661,7 +682,7 @@ class CAManagementService {
         requestId,
         scheduledDateTime,
         duration,
-        meetingType || "zoom"
+        meetingType || "zoom",
       );
 
       return {
@@ -699,7 +720,7 @@ class CAManagementService {
       // Update VC meeting
       const updatedVCMeeting = await vcSchedulingService.rescheduleMeeting(
         meetingId,
-        newScheduledDateTime
+        newScheduledDateTime,
       );
 
       return {
@@ -743,10 +764,10 @@ class CAManagementService {
     if (!payments || payments.length === 0) return "unpaid";
 
     const hasBookingFee = payments.some(
-      (p) => p.paymentType === "booking_fee" && p.status === "completed"
+      (p) => p.paymentType === "booking_fee" && p.status === "completed",
     );
     const hasServiceFee = payments.some(
-      (p) => p.paymentType === "service_fee" && p.status === "completed"
+      (p) => p.paymentType === "service_fee" && p.status === "completed",
     );
 
     if (hasBookingFee && hasServiceFee) return "fully_paid";

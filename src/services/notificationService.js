@@ -91,23 +91,30 @@ class NotificationService {
     recipientType = "user",
     page = 1,
     limit = 20,
+    unreadOnly = false,
   ) {
     try {
       const cacheKey = cacheService
         .getCacheKeys()
-        .USER_NOTIFICATIONS(recipientId);
+        .USER_NOTIFICATIONS(`${recipientId}:${unreadOnly}:${page}:${limit}`);
 
       let notifications = await cacheService.get(cacheKey);
 
       if (!notifications) {
         const offset = (page - 1) * limit;
 
+        const whereClause = {
+          recipientId,
+          recipientType,
+          channel: "in_app",
+        };
+
+        if (unreadOnly) {
+          whereClause.isRead = false;
+        }
+
         const { rows, count } = await Notification.findAndCountAll({
-          where: {
-            recipientId,
-            recipientType,
-            channel: "in_app",
-          },
+          where: whereClause,
           limit,
           offset,
           order: [["createdAt", "DESC"]],

@@ -93,7 +93,7 @@ module.exports = (sequelize, DataTypes) => {
     commissionPercentage: {
       type: DataTypes.DECIMAL(5, 2),
       allowNull: false,
-      defaultValue: 8.0,
+      defaultValue: 10.0,
       validate: {
         min: 0,
         max: 100,

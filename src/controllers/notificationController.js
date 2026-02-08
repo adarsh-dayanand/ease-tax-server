@@ -9,13 +9,14 @@ class NotificationController {
   async getNotifications(req, res) {
     try {
       const userId = req.user.id;
-      const { page = 1, limit = 20 } = req.query;
+      const { page = 1, limit = 20, unreadOnly = "false" } = req.query;
 
       const notifications = await notificationService.getUserNotifications(
         userId,
         req.user.type || "user",
         parseInt(page),
-        parseInt(limit)
+        parseInt(limit),
+        unreadOnly === "true",
       );
 
       res.json({
@@ -44,7 +45,10 @@ class NotificationController {
 
       // Handle mark all as read
       if (markAllAsRead) {
-        await notificationService.markAllAsRead(userId, req.user.type || "user");
+        await notificationService.markAllAsRead(
+          userId,
+          req.user.type || "user",
+        );
         return res.json({
           success: true,
           message: "All notifications marked as read",
@@ -53,7 +57,11 @@ class NotificationController {
 
       // Handle single notification (legacy support)
       if (notificationId) {
-        await notificationService.markAsRead(notificationId, userId, req.user.type || "user");
+        await notificationService.markAsRead(
+          notificationId,
+          userId,
+          req.user.type || "user",
+        );
         return res.json({
           success: true,
           message: "Notification marked as read",
@@ -61,9 +69,17 @@ class NotificationController {
       }
 
       // Handle multiple notifications
-      if (notificationIds && Array.isArray(notificationIds) && notificationIds.length > 0) {
+      if (
+        notificationIds &&
+        Array.isArray(notificationIds) &&
+        notificationIds.length > 0
+      ) {
         for (const id of notificationIds) {
-          await notificationService.markAsRead(id, userId, req.user.type || "user");
+          await notificationService.markAsRead(
+            id,
+            userId,
+            req.user.type || "user",
+          );
         }
         return res.json({
           success: true,
@@ -142,7 +158,7 @@ class NotificationController {
         title,
         message,
         type,
-        data
+        data,
       );
 
       res.json({
