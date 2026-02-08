@@ -53,45 +53,49 @@ const authenticateToken = async (req, res, next) => {
         email,
       });
 
-      // Parallelize Lookups for User, CA, and Admin
-      const [userInDb, caInDb, adminInDb] = await Promise.all([
-        User.findOne({
-          where: {
-            [require("sequelize").Op.or]: [
-              { googleUid: uid },
-              { phoneUid: uid },
-              email ? { email: email.toLowerCase().trim() } : null,
-            ].filter(Boolean),
-          },
-        }),
-        CA.findOne({
-          where: {
-            [require("sequelize").Op.or]: [
-              { googleUid: uid },
-              { phoneUid: uid },
-              email ? { email: email.toLowerCase().trim() } : null,
-            ].filter(Boolean),
-          },
-        }),
-        Admin.findOne({
-          where: {
-            [require("sequelize").Op.or]: [
-              { googleUid: uid },
-              email ? { email: email.toLowerCase().trim() } : null,
-            ].filter(Boolean),
-          },
-        }),
-      ]);
+      // Sequential checks to avoid overloading DB with 3 queries per request
+      // Check User first (most likely)
+      let user = await User.findOne({
+        where: {
+          [require("sequelize").Op.or]: [
+            { googleUid: uid },
+            { phoneUid: uid },
+            email ? { email: email.toLowerCase().trim() } : null,
+          ].filter(Boolean),
+        },
+      });
 
-      let user = userInDb;
       let userType = "user";
 
-      if (caInDb) {
-        user = caInDb;
-        userType = "ca";
-      } else if (adminInDb) {
-        user = adminInDb;
-        userType = "admin";
+      if (!user) {
+        // Check CA
+        user = await CA.findOne({
+          where: {
+            [require("sequelize").Op.or]: [
+              { googleUid: uid },
+              { phoneUid: uid },
+              email ? { email: email.toLowerCase().trim() } : null,
+            ].filter(Boolean),
+          },
+        });
+
+        if (user) {
+          userType = "ca";
+        } else {
+          // Check Admin
+          user = await Admin.findOne({
+            where: {
+              [require("sequelize").Op.or]: [
+                { googleUid: uid },
+                email ? { email: email.toLowerCase().trim() } : null,
+              ].filter(Boolean),
+            },
+          });
+
+          if (user) {
+            userType = "admin";
+          }
+        }
       }
 
       // Handle status checks and updates
@@ -439,35 +443,39 @@ const optionalAuth = async (req, res, next) => {
         return next();
       }
 
-      // Parallelize Lookups
-      const [userInDb, caInDb] = await Promise.all([
-        User.findOne({
-          where: {
-            [require("sequelize").Op.or]: [
-              { googleUid: uid },
-              { phoneUid: uid },
-              email ? { email: email.toLowerCase().trim() } : null,
-            ].filter(Boolean),
-          },
-        }),
-        CA.findOne({
-          where: {
-            [require("sequelize").Op.or]: [
-              { googleUid: uid },
-              { phoneUid: uid },
-              email ? { email: email.toLowerCase().trim() } : null,
-            ].filter(Boolean),
-          },
-        }),
-      ]);
+      logger.info(
+        "Cache miss: Authenticating user with Firebase token (optional)",
+        { uid, email },
+      );
 
-      let user = userInDb;
+      // Sequential checks
+      let user = await User.findOne({
+        where: {
+          [require("sequelize").Op.or]: [
+            { googleUid: uid },
+            { phoneUid: uid },
+            email ? { email: email.toLowerCase().trim() } : null,
+          ].filter(Boolean),
+        },
+      });
+
       let userType = "user";
 
-      if (caInDb) {
-        user = caInDb;
-        userType = "ca";
-        if (user.status === "suspended") user = null;
+      if (!user) {
+        user = await CA.findOne({
+          where: {
+            [require("sequelize").Op.or]: [
+              { googleUid: uid },
+              { phoneUid: uid },
+              email ? { email: email.toLowerCase().trim() } : null,
+            ].filter(Boolean),
+          },
+        });
+
+        if (user) {
+          userType = "ca";
+          if (user.status === "suspended") user = null;
+        }
       }
 
       if (user) {
