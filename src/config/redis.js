@@ -9,7 +9,15 @@ class RedisManager {
 
   async connect() {
     try {
+      logger.info("[Redis] Attempting to connect to Redis...", {
+        host: process.env.REDIS_HOST || "localhost",
+        port: parseInt(process.env.REDIS_PORT) || 6379,
+        database: parseInt(process.env.REDIS_DB) || 0,
+        hasPassword: !!process.env.REDIS_PASSWORD,
+      });
+
       if (this.client && (this.client.isOpen || this.client.isReady)) {
+        logger.info("[Redis] Client already connected");
         return this.client;
       }
 
@@ -19,8 +27,14 @@ class RedisManager {
           port: parseInt(process.env.REDIS_PORT) || 6379,
           connectTimeout: 5000, // 5 seconds timeout for connection
           reconnectStrategy: (retries) => {
+            logger.warn(`[Redis] Reconnection attempt ${retries}`, {
+              maxRetries: 5,
+              nextRetryIn: Math.min(retries * 500, 3000),
+            });
             if (retries > 5) {
-              logger.error("Redis max retry attempts reached, disabling cache");
+              logger.error(
+                "[Redis] Max retry attempts reached, disabling cache",
+              );
               return false;
             }
             return Math.min(retries * 500, 3000);
@@ -33,35 +47,49 @@ class RedisManager {
       });
 
       this.client.on("error", (error) => {
-        logger.warn("Redis Client Error:", error.message);
+        logger.error("[Redis] Client Error:", {
+          message: error.message,
+          code: error.code,
+          stack: error.stack,
+        });
         this.isConnected = false;
       });
 
       this.client.on("connect", () => {
-        logger.info("Redis Client Connected");
+        logger.info("[Redis] Client Connected successfully");
         this.isConnected = true;
       });
 
       this.client.on("ready", () => {
-        logger.info("Redis Client Ready");
+        logger.info("[Redis] Client Ready to accept commands");
         this.isConnected = true;
       });
 
       this.client.on("reconnecting", () => {
-        logger.info("Redis Client Reconnecting...");
+        logger.warn("[Redis] Client Reconnecting...");
       });
 
       this.client.on("end", () => {
-        logger.warn("Redis Client Connection Ended");
+        logger.warn("[Redis] Client Connection Ended");
         this.isConnected = false;
       });
 
       await this.client.connect();
-      logger.info("Redis connection established successfully");
+      logger.info("[Redis] Connection established successfully", {
+        isOpen: this.client.isOpen,
+        isReady: this.client.isReady,
+      });
 
       return this.client;
     } catch (error) {
-      logger.error("Failed to connect to Redis:", error.message);
+      logger.error("[Redis] Failed to connect:", {
+        message: error.message,
+        code: error.code,
+        errno: error.errno,
+        syscall: error.syscall,
+        address: error.address,
+        port: error.port,
+      });
       this.isConnected = false;
       // Don't throw, let the app run without cache
       return null;
