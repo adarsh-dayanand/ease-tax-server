@@ -32,179 +32,135 @@ const authenticateToken = async (req, res, next) => {
     const firebaseResult = await firebaseConfig.verifyIdToken(token);
 
     if (firebaseResult.success) {
-      // Firebase token is valid
-      const { uid, email, email_verified } = firebaseResult.data;
+      const { uid, email } = firebaseResult.data;
+      const sessionCacheKey = `firebase_${uid}`;
 
-      logger.info("Authenticating user with Firebase token", {
+      // Check cache first
+      let reqUser = null;
+      try {
+        reqUser = await redisManager.getSession(sessionCacheKey);
+      } catch (err) {
+        logger.warn("Redis error during session check:", err.message);
+      }
+
+      if (reqUser) {
+        req.user = reqUser;
+        return next();
+      }
+
+      logger.info("Cache miss: Authenticating user with Firebase token", {
         uid,
         email,
-        path: req.path,
       });
 
-      // Check if user exists in our database - be explicit about type
-      // First try by googleUid (for Google auth), then phoneUid (for phone auth), then by email as fallback
-      let user = await User.findOne({ where: { googleUid: uid } });
-      
-      // If not found by googleUid, try by phoneUid (for phone authentication)
-      if (!user) {
-        user = await User.findOne({ where: { phoneUid: uid } });
-        // If found by phoneUid but phoneUid is missing or different, update it
-        if (user && user.phoneUid !== uid) {
-          await user.update({ phoneUid: uid });
-          logger.info("Updated user with phoneUid", { userId: user.id, uid });
-        }
-      }
-      
-      // If still not found, try by email (for users who signed up before googleUid/phoneUid was set)
-      if (!user && email) {
-        user = await User.findOne({ where: { email: email.toLowerCase().trim() } });
-        // If found by email, update the appropriate UID field based on auth provider
-        if (user) {
-          const provider = firebaseResult.data.firebase?.sign_in_provider;
-          if (provider === "phone" && !user.phoneUid) {
-            await user.update({ phoneUid: uid });
-            logger.info("Updated user with phoneUid from email lookup", { userId: user.id, email });
-          } else if ((provider === "google.com" || !provider) && !user.googleUid) {
-            await user.update({ googleUid: uid });
-            logger.info("Updated user with googleUid from email lookup", { userId: user.id, email });
-          }
-        }
-      }
-      
+      // Parallelize Lookups for User, CA, and Admin
+      const [userInDb, caInDb, adminInDb] = await Promise.all([
+        User.findOne({
+          where: {
+            [require("sequelize").Op.or]: [
+              { googleUid: uid },
+              { phoneUid: uid },
+              email ? { email: email.toLowerCase().trim() } : null,
+            ].filter(Boolean),
+          },
+        }),
+        CA.findOne({
+          where: {
+            [require("sequelize").Op.or]: [
+              { googleUid: uid },
+              { phoneUid: uid },
+              email ? { email: email.toLowerCase().trim() } : null,
+            ].filter(Boolean),
+          },
+        }),
+        Admin.findOne({
+          where: {
+            [require("sequelize").Op.or]: [
+              { googleUid: uid },
+              email ? { email: email.toLowerCase().trim() } : null,
+            ].filter(Boolean),
+          },
+        }),
+      ]);
+
+      let user = userInDb;
       let userType = "user";
 
-      if (!user) {
-        // Check if it's a CA - but only if they have a pre-existing CA record
-        user = await CA.findOne({ where: { googleUid: uid } });
-        
-        // If not found by googleUid, try by phoneUid (for phone authentication)
-        if (!user) {
-          user = await CA.findOne({ where: { phoneUid: uid } });
-          // If found by phoneUid but phoneUid is missing or different, update it
-          if (user && user.phoneUid !== uid) {
-            await user.update({ phoneUid: uid });
-            logger.info("Updated CA with phoneUid", { caId: user.id, uid });
-          }
-        }
-        
-        // If still not found, try by email
-        if (!user && email) {
-          user = await CA.findOne({ where: { email: email.toLowerCase().trim() } });
-          if (user) {
-            const provider = firebaseResult.data.firebase?.sign_in_provider;
-            if (provider === "phone" && !user.phoneUid) {
-              await user.update({ phoneUid: uid });
-              logger.info("Updated CA with phoneUid from email lookup", { caId: user.id, email });
-            } else if ((provider === "google.com" || !provider) && !user.googleUid) {
-              await user.update({ googleUid: uid });
-              logger.info("Updated CA with googleUid from email lookup", { caId: user.id, email });
-            }
-          }
-        }
-        
-        if (user) {
-          userType = "ca";
-          // Additional security: verify CA is actually verified/active
-          if (user.status && user.status !== "active") {
-            return res.status(401).json({
-              success: false,
-              error: {
-                code: CONSTANTS.ERROR_CODES.AUTH_UNAUTHORIZED,
-                message: "CA account pending verification or inactive",
-              },
-            });
-          }
-        } else {
-          // Check if it's an admin
-          user = await Admin.findOne({ where: { googleUid: uid } });
-          if (!user && email) {
-            user = await Admin.findOne({ where: { email: email.toLowerCase().trim() } });
-            if (user && !user.googleUid) {
-              await user.update({ googleUid: uid });
-              logger.info("Updated admin with googleUid", { adminId: user.id, email });
-            }
-          }
-          
-          if (user) {
-            userType = "admin";
-            // Additional security: verify admin is active
-            if (user.status && user.status !== "active") {
-              return res.status(401).json({
-                success: false,
-                error: {
-                  code: CONSTANTS.ERROR_CODES.AUTH_UNAUTHORIZED,
-                  message: "Admin account is inactive",
-                },
-              });
-            }
-          }
-        }
+      if (caInDb) {
+        user = caInDb;
+        userType = "ca";
+      } else if (adminInDb) {
+        user = adminInDb;
+        userType = "admin";
       }
 
-      if (!user) {
-        // User doesn't exist - try to auto-create for regular users (not CA/Admin)
-        // This handles the case where user signs in but creation failed
-        if (email && userType === "user") {
-          logger.info("User not found, attempting auto-creation", {
-            uid,
-            email,
-            path: req.path,
-          });
-          
-          try {
-            // Extract name from email or use default
-            const name = email.split("@")[0] || "User";
-            
-            user = await User.create({
-              email: email.toLowerCase().trim(),
-              name,
-              googleUid: uid,
-              status: "active",
-            });
-            
-            logger.info("Auto-created user in middleware", {
-              userId: user.id,
-              email: user.email,
-            });
-          } catch (createError) {
-            logger.error("Failed to auto-create user in middleware", {
-              error: createError.message,
-              uid,
-              email,
-              errorName: createError.name,
-            });
-            
-            // If creation fails, check if user was created by another request
-            user = await User.findOne({ where: { email: email.toLowerCase().trim() } });
-            if (user && !user.googleUid) {
-              await user.update({ googleUid: uid });
-            }
-            
-            if (!user) {
-              return res.status(401).json({
-                success: false,
-                error: {
-                  code: CONSTANTS.ERROR_CODES.USER_NOT_FOUND,
-                  message: "Account not found in system. Please complete the sign-in process first by calling /api/auth/user/google",
-                },
-              });
-            }
-          }
-        } else {
-          logger.warn("User not found in database", {
-            uid,
-            email,
-            path: req.path,
-            userType,
-          });
+      // Handle status checks and updates
+      if (user) {
+        // Sync UIDs if necessary (moved to background or simplified)
+        const provider = firebaseResult.data.firebase?.sign_in_provider;
+        const updates = {};
+        if (provider === "phone" && user.phoneUid !== uid)
+          updates.phoneUid = uid;
+        else if (
+          (provider === "google.com" || !provider) &&
+          user.googleUid !== uid
+        )
+          updates.googleUid = uid;
+
+        if (Object.keys(updates).length > 0) {
+          user
+            .update(updates)
+            .catch((e) => logger.warn("Lazy sync UID failed", e.message));
+        }
+
+        if (userType === "ca" && user.status !== "active") {
           return res.status(401).json({
             success: false,
             error: {
-              code: CONSTANTS.ERROR_CODES.USER_NOT_FOUND,
-              message: "Account not found in system. Please complete the sign-in process first.",
+              code: CONSTANTS.ERROR_CODES.AUTH_UNAUTHORIZED,
+              message: "CA account pending verification or inactive",
             },
           });
         }
+
+        if (userType === "admin" && user.status !== "active") {
+          return res.status(401).json({
+            success: false,
+            error: {
+              code: CONSTANTS.ERROR_CODES.AUTH_UNAUTHORIZED,
+              message: "Admin account is inactive",
+            },
+          });
+        }
+      } else {
+        // Auto-create only for regular users if email exists
+        if (email) {
+          try {
+            user = await User.create({
+              email: email.toLowerCase().trim(),
+              name: email.split("@")[0] || "User",
+              googleUid: uid,
+              status: "active",
+            });
+            userType = "user";
+          } catch (e) {
+            // Fallback for race conditions
+            user = await User.findOne({
+              where: { email: email.toLowerCase().trim() },
+            });
+            if (!user) throw e;
+          }
+        }
+      }
+
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          error: {
+            code: CONSTANTS.ERROR_CODES.USER_NOT_FOUND,
+            message: "Account not found in system.",
+          },
+        });
       }
 
       // Attach user info to request
@@ -217,8 +173,10 @@ const authenticateToken = async (req, res, next) => {
         emailVerified: true,
       };
 
-      // Cache user session
-      await redisManager.setSession(`firebase_${uid}`, req.user, 24 * 60 * 60);
+      // Cache user session for 24 hours
+      await redisManager
+        .setSession(sessionCacheKey, req.user, 24 * 60 * 60)
+        .catch(() => {});
 
       return next();
     }
@@ -232,7 +190,9 @@ const authenticateToken = async (req, res, next) => {
       if (redisManager.client && redisManager.client.isReady) {
         sessionData = await redisManager.getSession(decoded.sessionId);
       } else {
-        logger.warn("Redis unavailable for session check, allowing auth with JWT only");
+        logger.warn(
+          "Redis unavailable for session check, allowing auth with JWT only",
+        );
       }
 
       if (!sessionData) {
@@ -455,10 +415,9 @@ const optionalAuth = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return next(); // No token provided, continue without authentication
+    return next();
   }
 
-  // Use the same logic as authenticateToken but don't return errors
   try {
     const token = authHeader.substring(7);
 
@@ -466,26 +425,49 @@ const optionalAuth = async (req, res, next) => {
     const firebaseResult = await firebaseConfig.verifyIdToken(token);
 
     if (firebaseResult.success) {
-      const { uid } = firebaseResult.data;
-      // Try googleUid first, then phoneUid
-      let user = await User.findOne({ where: { googleUid: uid } });
-      if (!user) {
-        user = await User.findOne({ where: { phoneUid: uid } });
+      const { uid, email } = firebaseResult.data;
+      const sessionCacheKey = `firebase_${uid}`;
+
+      // Check cache first
+      let reqUser = null;
+      try {
+        reqUser = await redisManager.getSession(sessionCacheKey);
+      } catch (err) {}
+
+      if (reqUser) {
+        req.user = reqUser;
+        return next();
       }
+
+      // Parallelize Lookups
+      const [userInDb, caInDb] = await Promise.all([
+        User.findOne({
+          where: {
+            [require("sequelize").Op.or]: [
+              { googleUid: uid },
+              { phoneUid: uid },
+              email ? { email: email.toLowerCase().trim() } : null,
+            ].filter(Boolean),
+          },
+        }),
+        CA.findOne({
+          where: {
+            [require("sequelize").Op.or]: [
+              { googleUid: uid },
+              { phoneUid: uid },
+              email ? { email: email.toLowerCase().trim() } : null,
+            ].filter(Boolean),
+          },
+        }),
+      ]);
+
+      let user = userInDb;
       let userType = "user";
 
-      if (!user) {
-        user = await CA.findOne({ where: { googleUid: uid } });
-        if (!user) {
-          user = await CA.findOne({ where: { phoneUid: uid } });
-        }
-        if (user) {
-          userType = "ca";
-          // Only allow verified CAs in optional auth
-          if (!user.verified || (user.status && user.status === "suspended")) {
-            user = null; // Don't authenticate unverified/suspended CAs
-          }
-        }
+      if (caInDb) {
+        user = caInDb;
+        userType = "ca";
+        if (user.status === "suspended") user = null;
       }
 
       if (user) {
@@ -496,6 +478,10 @@ const optionalAuth = async (req, res, next) => {
           type: userType,
           firebaseUid: uid,
         };
+        // Cache user session
+        await redisManager
+          .setSession(sessionCacheKey, req.user, 24 * 60 * 60)
+          .catch(() => {});
       }
     } else {
       // Try JWT
@@ -506,13 +492,10 @@ const optionalAuth = async (req, res, next) => {
         if (sessionData) {
           req.user = sessionData;
         }
-      } catch (jwtError) {
-        // Ignore JWT errors in optional auth
-      }
+      } catch (jwtError) {}
     }
   } catch (error) {
     logger.error("Optional auth error:", error);
-    // Continue without authentication on error
   }
 
   next();
@@ -548,7 +531,7 @@ const refreshTokenIfNeeded = async (req, res, next) => {
           sessionId,
         },
         process.env.JWT_SECRET,
-        { expiresIn: process.env.JWT_EXPIRES_IN || "24h" }
+        { expiresIn: process.env.JWT_EXPIRES_IN || "24h" },
       );
 
       // Update session in Redis

@@ -1,42 +1,34 @@
-const redis = require("redis");
+const redisManager = require("./config/redis");
 
-const client = redis.createClient({
-  socket: {
-    host: process.env.REDIS_HOST || "127.0.0.1",
-    port: parseInt(process.env.REDIS_PORT) || 6379,
-    reconnectStrategy: (retries) => {
-      if (retries > 10) {
-        console.error("Redis max retry attempts reached");
-        return false;
-      }
-      return Math.min(retries * 100, 3000);
-    },
+const client = {
+  get isOpen() {
+    return redisManager.client?.isOpen || false;
   },
-  password: process.env.REDIS_PASSWORD || undefined,
-});
-
-client.on("error", (err) => {
-  console.warn("Redis Client Error (cache disabled):", err.message);
-});
-
-client.on("connect", () => {
-  console.log("Redis client connected");
-});
+  get isReady() {
+    return redisManager.client?.isReady || false;
+  },
+  // Proxy common methods
+  get: (...args) => redisManager.client?.get(...args),
+  set: (...args) => redisManager.client?.set(...args),
+  setEx: (...args) => redisManager.client?.setEx(...args),
+  del: (...args) => redisManager.client?.del(...args),
+  exists: (...args) => redisManager.client?.exists(...args),
+  keys: (...args) => redisManager.client?.keys(...args),
+  incr: (...args) => redisManager.client?.incr(...args),
+  expire: (...args) => redisManager.client?.expire(...args),
+  hSet: (...args) => redisManager.client?.hSet(...args),
+  hGet: (...args) => redisManager.client?.hGet(...args),
+  hGetAll: (...args) => redisManager.client?.hGetAll(...args),
+  sAdd: (...args) => redisManager.client?.sAdd(...args),
+  sMembers: (...args) => redisManager.client?.sMembers(...args),
+  sRem: (...args) => redisManager.client?.sRem(...args),
+  publish: (...args) => redisManager.client?.publish(...args),
+  on: (...args) => redisManager.client?.on(...args),
+  connect: () => redisManager.connect(),
+};
 
 async function connectRedis() {
-  try {
-    if (!client.isOpen) {
-      await client.connect();
-      return true;
-    }
-    return true;
-  } catch (error) {
-    console.warn(
-      "Redis connection failed - cache will be disabled:",
-      error.message,
-    );
-    return false;
-  }
+  return await redisManager.connect();
 }
 
 module.exports = { client, connectRedis };

@@ -9,24 +9,31 @@ class RedisManager {
 
   async connect() {
     try {
+      if (this.client && (this.client.isOpen || this.client.isReady)) {
+        return this.client;
+      }
+
       this.client = createClient({
         socket: {
           host: process.env.REDIS_HOST || "localhost",
           port: parseInt(process.env.REDIS_PORT) || 6379,
+          connectTimeout: 5000, // 5 seconds timeout for connection
           reconnectStrategy: (retries) => {
-            if (retries > 10) {
-              logger.error("Redis max retry attempts reached");
+            if (retries > 5) {
+              logger.error("Redis max retry attempts reached, disabling cache");
               return false;
             }
-            return Math.min(retries * 100, 3000);
+            return Math.min(retries * 500, 3000);
           },
         },
         password: process.env.REDIS_PASSWORD || undefined,
         database: parseInt(process.env.REDIS_DB) || 0,
+        // Add command timeout to prevent hanging on slow queries
+        commandTimeout: 3000,
       });
 
       this.client.on("error", (error) => {
-        logger.error("Redis Client Error:", error);
+        logger.warn("Redis Client Error:", error.message);
         this.isConnected = false;
       });
 
@@ -35,8 +42,17 @@ class RedisManager {
         this.isConnected = true;
       });
 
-      this.client.on("disconnect", () => {
-        logger.warn("Redis Client Disconnected");
+      this.client.on("ready", () => {
+        logger.info("Redis Client Ready");
+        this.isConnected = true;
+      });
+
+      this.client.on("reconnecting", () => {
+        logger.info("Redis Client Reconnecting...");
+      });
+
+      this.client.on("end", () => {
+        logger.warn("Redis Client Connection Ended");
         this.isConnected = false;
       });
 
@@ -45,22 +61,22 @@ class RedisManager {
 
       return this.client;
     } catch (error) {
-      logger.error("Failed to connect to Redis:", error);
-      throw error;
+      logger.error("Failed to connect to Redis:", error.message);
+      this.isConnected = false;
+      // Don't throw, let the app run without cache
+      return null;
     }
   }
 
   async disconnect() {
-    if (this.client && this.isConnected) {
-      await this.client.disconnect();
+    if (this.client) {
+      await this.client.quit().catch(() => {});
+      this.isConnected = false;
       logger.info("Redis connection closed");
     }
   }
 
   getClient() {
-    if (!this.isConnected) {
-      throw new Error("Redis client is not connected");
-    }
     return this.client;
   }
 

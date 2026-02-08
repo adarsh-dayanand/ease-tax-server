@@ -94,10 +94,9 @@ require("./config/swagger")(app);
 
 // Connections
 console.log("🔌 Initializing connections...");
-connectRedis().catch((err) => logger.warn("Redis connection warning:", err));
 redisManager
   .connect()
-  .catch((err) => logger.warn("Redis Manager connection warning:", err));
+  .catch((err) => logger.warn("Redis connection warning:", err));
 
 // Initialize WS
 const io = webSocketService.initialize(server);
