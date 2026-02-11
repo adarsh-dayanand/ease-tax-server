@@ -45,6 +45,10 @@ const upload = multer({
 });
 
 class DocumentService {
+  constructor() {
+    this.s3 = s3;
+    this.bucketName = BUCKET_NAME;
+  }
   /**
    * Upload document to S3
    */

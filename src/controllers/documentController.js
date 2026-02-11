@@ -551,28 +551,50 @@ class DocumentController {
       const { userType, filename } = req.params;
       const key = `profile_images/${userType}/${filename}`;
 
-      const stream = documentService.getProfileImageStream(key);
+      logger.info(`Proxying profile image: ${key}`);
 
-      stream.on("error", (error) => {
-        logger.error("S3 stream error:", error);
-        if (!res.headersSent) {
-          res.status(404).json({ success: false, message: "Image not found" });
-        }
-      });
-
-      // Set content type based on extension
-      const ext = filename.split(".").pop().toLowerCase();
-      const contentTypes = {
-        png: "image/png",
-        jpg: "image/jpeg",
-        jpeg: "image/jpeg",
-        webp: "image/webp",
+      // Get metadata first to check if file exists and get content type/length
+      const params = {
+        Bucket: documentService.bucketName,
+        Key: key,
       };
-      res.setHeader("Content-Type", contentTypes[ext] || "image/png");
-      res.setHeader("Cache-Control", "public, max-age=86400"); // Cache for 24h
-      res.setHeader("Access-Control-Allow-Origin", "*"); // Allow all origins for images
 
-      stream.pipe(res);
+      try {
+        const metadata = await documentService.s3.headObject(params).promise();
+
+        // Set headers based on S3 metadata
+        res.setHeader("Content-Type", metadata.ContentType || "image/png");
+        res.setHeader("Content-Length", metadata.ContentLength);
+        res.setHeader("Last-Modified", metadata.LastModified);
+        res.setHeader("Cache-Control", "public, max-age=86400"); // Cache for 24h
+        res.setHeader("Access-Control-Allow-Origin", "*");
+        res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+        res.setHeader(
+          "Access-Control-Allow-Headers",
+          "Content-Type, Authorization",
+        );
+
+        const stream = documentService.getProfileImageStream(key);
+
+        stream.on("error", (error) => {
+          logger.error(`S3 proxy stream error for key ${key}:`, error);
+          if (!res.headersSent) {
+            res
+              .status(500)
+              .json({ success: false, message: "Error streaming image" });
+          }
+        });
+
+        stream.pipe(res);
+      } catch (headError) {
+        if (headError.code === "NotFound" || headError.code === "NoSuchKey") {
+          logger.warn(`Profile image not found in S3: ${key}`);
+          return res
+            .status(404)
+            .json({ success: false, message: "Image not found" });
+        }
+        throw headError;
+      }
     } catch (error) {
       logger.error("Error in getProfileImage proxy:", error);
       if (!res.headersSent) {
