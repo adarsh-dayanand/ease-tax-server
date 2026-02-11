@@ -60,9 +60,18 @@ class NotificationService {
         isRead: false,
       });
 
-      // Clear user notifications cache
-       catch (error) {
-      logger.error("Error getting user notifications:", error);
+      // Send real-time notification if immediate and not scheduled
+      if (!scheduledFor && this.socketio) {
+        await this.sendRealTimeNotification(
+          recipientId,
+          recipientType,
+          notification,
+        );
+      }
+
+      return notification;
+    } catch (error) {
+      logger.error("Error creating notification:", error);
       throw error;
     }
   }
@@ -86,10 +95,6 @@ class NotificationService {
 
       await notification.markAsRead();
 
-            const cacheKey = cacheService
-        .getCacheKeys()
-        .USER_NOTIFICATIONS(recipientId);
-      
       return true;
     } catch (error) {
       logger.error("Error marking notification as read:", error);
@@ -104,10 +109,6 @@ class NotificationService {
     try {
       await Notification.markAllAsRead(recipientId, recipientType);
 
-            const cacheKey = cacheService
-        .getCacheKeys()
-        .USER_NOTIFICATIONS(recipientId);
-      
       return true;
     } catch (error) {
       logger.error("Error marking all notifications as read:", error);
@@ -163,13 +164,9 @@ class NotificationService {
 
       await Notification.bulkCreate(notifications);
 
-            for (const recipient of recipients) {
-        const cacheKey = cacheService
-          .getCacheKeys()
-          .USER_NOTIFICATIONS(recipient.id);
-        
-        // Send real-time notification if immediate
-        if (!scheduledFor && this.socketio) {
+      // Send real-time notifications if immediate
+      if (!scheduledFor && this.socketio) {
+        for (const recipient of recipients) {
           await this.sendRealTimeNotification(recipient.id, recipient.type, {
             id: null, // Will be set after creation
             title,

@@ -36,7 +36,7 @@ class ConsultationService {
 
       if (existingConsultation) {
         throw new Error(
-          "You already have an active consultation for this service"
+          "You already have an active consultation for this service",
         );
       }
 
@@ -58,13 +58,8 @@ class ConsultationService {
       await notificationService.notifyConsultationRequested(
         caService.caId,
         consultation.id,
-        { name: "User" }
+        { name: "User" },
       );
-
-      // Clear related caches
-      await this.clearConsultationCache(consultation.id);
-            // Clear CA dashboard cache since a new request was created
-      .CA_DASHBOARD(caService.caId));
 
       return await this.getConsultationDetails(consultation.id);
     } catch (error) {
@@ -78,65 +73,85 @@ class ConsultationService {
    */
   async getConsultationDetails(consultationId) {
     try {
-      
-
-        // Get base service price from CAService.customPrice (CA's price for this service)
-        const servicePrice = serviceRequest.caService?.customPrice
-          ? parseFloat(serviceRequest.caService.customPrice)
-          : null;
-
-        // Calculate payment status based on booking_fee and service_fee payments
-        const bookingPayment = serviceRequest.payments?.find(
-          (p) => p.paymentType === "booking_fee"
-        );
-        const servicePayment = serviceRequest.payments?.find(
-          (p) => p.paymentType === "service_fee"
-        );
-
-        let paymentStatus = "unpaid";
-        if (bookingPayment && bookingPayment.status === "completed") {
-          if (servicePayment && servicePayment.status === "completed") {
-            paymentStatus = "paid"; // Both payments completed
-          } else {
-            paymentStatus = "token-paid"; // Only booking fee paid
-          }
-        }
-
-        // Check if user has already reviewed this service
-        const existingReview = await Review.findOne({
-          where: {
-            serviceRequestId: serviceRequest.id,
-            userId: serviceRequest.userId,
-            caId: serviceRequest.caId,
+      const serviceRequest = await ServiceRequest.findByPk(consultationId, {
+        include: [
+          {
+            model: CA,
+            as: "ca",
+            attributes: ["id", "name", "profileImage"],
           },
-        });
+          {
+            model: CAService,
+            as: "caService",
+            attributes: ["customPrice", "currency", "experienceLevel"],
+          },
+          {
+            model: Payment,
+            as: "payments",
+            attributes: ["id", "amount", "status", "paymentType"],
+          },
+        ],
+      });
 
-        consultation = {
-          id: serviceRequest.id,
+      if (!serviceRequest) {
+        throw new Error("Consultation not found");
+      }
+
+      let consultation;
+      const servicePrice = serviceRequest.caService?.customPrice
+        ? parseFloat(serviceRequest.caService.customPrice)
+        : null;
+
+      // Calculate payment status based on booking_fee and service_fee payments
+      const bookingPayment = serviceRequest.payments?.find(
+        (p) => p.paymentType === "booking_fee",
+      );
+      const servicePayment = serviceRequest.payments?.find(
+        (p) => p.paymentType === "service_fee",
+      );
+
+      let paymentStatus = "unpaid";
+      if (bookingPayment && bookingPayment.status === "completed") {
+        if (servicePayment && servicePayment.status === "completed") {
+          paymentStatus = "paid"; // Both payments completed
+        } else {
+          paymentStatus = "token-paid"; // Only booking fee paid
+        }
+      }
+
+      // Check if user has already reviewed this service
+      const existingReview = await Review.findOne({
+        where: {
+          serviceRequestId: serviceRequest.id,
+          userId: serviceRequest.userId,
           caId: serviceRequest.caId,
-          caName: serviceRequest.ca?.name || "CA Name",
-          caImage: serviceRequest.ca?.profileImage,
-          type: "video", // Default consultation type
-          purpose: serviceRequest.purpose,
-          status: serviceRequest.status,
-          paymentStatus: paymentStatus,
-          durationMinutes: 30, // Default duration
-          experienceLevel: serviceRequest.caService?.experienceLevel,
-          currency: serviceRequest?.caService?.currency || "INR",
-          // Service price from CAService.customPrice
-          servicePrice: servicePrice, // The base service price from CAService.customPrice
-          price: servicePrice, // For backward compatibility
-          notes: serviceRequest.additionalNotes,
-          progress: this.calculateProgress(serviceRequest.status),
-          createdAt: serviceRequest.createdAt,
-          updatedAt: serviceRequest.updatedAt,
-          meetingLink: serviceRequest.metadata?.meetingLink,
-          itrNumber: serviceRequest.metadata?.itrNumber,
-          acknowledgmentNumber: serviceRequest.metadata?.acknowledgmentNumber,
-          hasReviewed: !!existingReview,
-        };
+        },
+      });
 
-                      }
+      consultation = {
+        id: serviceRequest.id,
+        caId: serviceRequest.caId,
+        caName: serviceRequest.ca?.name || "CA Name",
+        caImage: serviceRequest.ca?.profileImage,
+        type: "video", // Default consultation type
+        purpose: serviceRequest.purpose,
+        status: serviceRequest.status,
+        paymentStatus: paymentStatus,
+        durationMinutes: 30, // Default duration
+        experienceLevel: serviceRequest.caService?.experienceLevel,
+        currency: serviceRequest?.caService?.currency || "INR",
+        // Service price from CAService.customPrice
+        servicePrice: servicePrice, // The base service price from CAService.customPrice
+        price: servicePrice, // For backward compatibility
+        notes: serviceRequest.additionalNotes,
+        progress: this.calculateProgress(serviceRequest.status),
+        createdAt: serviceRequest.createdAt,
+        updatedAt: serviceRequest.updatedAt,
+        meetingLink: serviceRequest.metadata?.meetingLink,
+        itrNumber: serviceRequest.metadata?.itrNumber,
+        acknowledgmentNumber: serviceRequest.metadata?.acknowledgmentNumber,
+        hasReviewed: !!existingReview,
+      };
 
       return consultation;
     } catch (error) {
@@ -180,8 +195,6 @@ class ConsultationService {
         },
       });
 
-            await this.clearConsultationCache(consultationId);
-
       return {
         success: true,
         refundAmount,
@@ -198,7 +211,24 @@ class ConsultationService {
    */
   async getConsultationMessages(consultationId, page = 1, limit = 50) {
     try {
-       catch (error) {
+      const offset = (page - 1) * limit;
+      const { rows, count } = await Message.findAndCountAll({
+        where: { serviceRequestId: consultationId },
+        limit,
+        offset,
+        order: [["createdAt", "DESC"]],
+      });
+
+      return {
+        data: rows,
+        pagination: {
+          page,
+          limit,
+          total: count,
+          totalPages: Math.ceil(count / limit),
+        },
+      };
+    } catch (error) {
       logger.error("Error getting consultation messages:", error);
       throw error;
     }
@@ -211,7 +241,7 @@ class ConsultationService {
     consultationId,
     senderId,
     messageContent,
-    attachmentUrl = null
+    attachmentUrl = null,
   ) {
     try {
       const consultation = await ServiceRequest.findByPk(consultationId);
@@ -255,11 +285,6 @@ class ConsultationService {
         ],
       });
 
-      // Clear messages cache
-      const cacheKey = cacheService
-        .getCacheKeys()
-        .CONSULTATION_MESSAGES(consultationId);
-      
       return {
         id: messageWithSender.id,
         serviceRequestId: consultationId,
@@ -297,7 +322,7 @@ class ConsultationService {
       const documentService = require("./documentService");
       return await documentService.getServiceRequestDocuments(
         consultationId,
-        requestingUserId
+        requestingUserId,
       );
     } catch (error) {
       logger.error("Error getting consultation documents:", error);
@@ -324,8 +349,6 @@ class ConsultationService {
           statusUpdatedAt: new Date(),
         },
       });
-
-            await this.clearConsultationCache(consultationId);
 
       return await this.getConsultationDetails(consultationId);
     } catch (error) {
@@ -397,9 +420,7 @@ class ConsultationService {
    * Clear consultation related cache
    */
   async clearConsultationCache(consultationId) {
-    try {    } catch (error) {
-      logger.error("Error clearing consultation cache:", error);
-    }
+    // No-op - cache removed
   }
 }
 

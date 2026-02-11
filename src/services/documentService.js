@@ -29,9 +29,9 @@ const fileFilter = (req, file, cb) => {
   } else {
     cb(
       new Error(
-        `File type .${fileExtension} not allowed. Allowed types: ${allowedTypes.join(", ")}`
+        `File type .${fileExtension} not allowed. Allowed types: ${allowedTypes.join(", ")}`,
       ),
-      false
+      false,
     );
   }
 };
@@ -53,7 +53,7 @@ class DocumentService {
     serviceRequestId,
     uploadedBy,
     uploaderType,
-    fileType
+    fileType,
   ) {
     try {
       // Generate unique filename
@@ -102,8 +102,6 @@ class DocumentService {
         },
       });
 
-            await this.clearDocumentCache(serviceRequestId);
-
       return {
         id: document.id,
         name: document.originalName,
@@ -144,7 +142,7 @@ class DocumentService {
         serviceRequestId,
         uploadedBy,
         "ca",
-        "itr_v"
+        "itr_v",
       );
     } catch (error) {
       logger.error("Error uploading ITR-V document:", error);
@@ -178,7 +176,7 @@ class DocumentService {
         consultationId,
         userId,
         uploaderType,
-        documentType
+        documentType,
       );
 
       // Send real-time notification to the other party
@@ -196,7 +194,7 @@ class DocumentService {
           id: document.id,
           name: document.name,
           serviceRequestId: consultationId,
-        }
+        },
       );
 
       return document;
@@ -236,7 +234,7 @@ class DocumentService {
               required: false,
             },
           ],
-        }
+        },
       );
 
       if (!serviceRequest) {
@@ -259,12 +257,12 @@ class DocumentService {
         }
 
         const finalPayment = serviceRequest.payments?.find(
-          (p) => p.paymentType === "service_fee" && p.status === "completed"
+          (p) => p.paymentType === "service_fee" && p.status === "completed",
         );
 
         if (!finalPayment) {
           throw new Error(
-            "ITR-V download requires completion of final payment"
+            "ITR-V download requires completion of final payment",
           );
         }
       }
@@ -272,12 +270,12 @@ class DocumentService {
       // If user is the CA, they can only access documents AFTER escrow payment is made
       if (serviceRequest.caId === userId) {
         const hasEscrowPayment = serviceRequest.payments?.some(
-          (p) => p.paymentType === "booking_fee" && p.status === "completed"
+          (p) => p.paymentType === "booking_fee" && p.status === "completed",
         );
 
         if (!hasEscrowPayment) {
           throw new Error(
-            "Access denied - escrow payment required for CA to access documents"
+            "Access denied - escrow payment required for CA to access documents",
           );
         }
       }
@@ -372,15 +370,30 @@ class DocumentService {
           serviceRequest.payments && serviceRequest.payments.length > 0;
         if (!hasEscrowPayment) {
           throw new Error(
-            "Access denied - escrow payment required for CA to access documents"
+            "Access denied - escrow payment required for CA to access documents",
           );
         }
       }
 
-      
-      }
+      const documents = await Document.findAll({
+        where: {
+          serviceRequestId,
+          status: { [Op.ne]: "deleted" },
+        },
+        order: [["createdAt", "DESC"]],
+      });
 
-      return documents;
+      return documents.map((doc) => ({
+        id: doc.id,
+        name: doc.originalName,
+        size: this.formatFileSize(doc.fileSize),
+        uploadedAt: doc.createdAt,
+        type: doc.fileType,
+        status: doc.status,
+        mimeType: doc.mimeType,
+        uploadedBy: doc.uploadedBy,
+        uploaderType: doc.uploaderType,
+      }));
     } catch (error) {
       logger.error("Error getting service request documents:", error);
       throw error;
@@ -411,7 +424,7 @@ class DocumentService {
           uploadedBy: document.uploadedBy,
         });
         throw new Error(
-          "Access denied - only the uploader can delete this document"
+          "Access denied - only the uploader can delete this document",
         );
       }
 
@@ -456,11 +469,6 @@ class DocumentService {
         serviceRequestId: document.serviceRequestId,
       });
 
-            await this.clearDocumentCache(document.serviceRequestId);
-
-      // Also clear user documents cache
-      await this.clearUserDocumentsCache(document.uploadedBy);
-
       return { success: true, message: "Document deleted successfully" };
     } catch (error) {
       logger.error("Error deleting document:", {
@@ -487,12 +495,12 @@ class DocumentService {
       // Check if CA is assigned to this service request
       const ServiceRequest = require("../../models").ServiceRequest;
       const serviceRequest = await ServiceRequest.findByPk(
-        document.serviceRequestId
+        document.serviceRequestId,
       );
 
       if (!serviceRequest || serviceRequest.caId !== caId) {
         throw new Error(
-          "Access denied - only assigned CA can verify documents"
+          "Access denied - only assigned CA can verify documents",
         );
       }
 
@@ -508,12 +516,10 @@ class DocumentService {
 
       await document.update(updateData);
 
-            await this.clearDocumentCache(document.serviceRequestId);
-
       // Send real-time notification about document verification
       const notificationService = require("./notificationService");
       const consultation = await ServiceRequest.findByPk(
-        document.serviceRequestId
+        document.serviceRequestId,
       );
 
       if (consultation) {
@@ -541,7 +547,7 @@ class DocumentService {
               documentName: document.originalName,
               rejectionReason: rejectionReason,
             },
-          }
+          },
         );
       }
 
@@ -643,33 +649,11 @@ class DocumentService {
    * Clear document related cache
    */
   async clearDocumentCache(serviceRequestId) {
-    try {
-      const cacheKey = cacheService
-        .getCacheKeys()
-        .CONSULTATION_DOCUMENTS(serviceRequestId);
-            logger.info("Cleared consultation documents cache", { serviceRequestId });
-    } catch (error) {
-      logger.error("Error clearing document cache:", error);
-    }
+    // No-op - cache removed
   }
 
-  /**
-   * Clear user documents cache
-   */
   async clearUserDocumentsCache(userId) {
-    try {
-            // Since we don't know the exact cache key format, we'll try common patterns
-      const cacheKeys = [
-        `user_documents_${userId}`,
-        `easetax:user:${userId}:documents`,
-      ];
-
-      for (const key of cacheKeys) {
-              }
-      logger.info("Cleared user documents cache", { userId });
-    } catch (error) {
-      logger.error("Error clearing user documents cache:", error);
-    }
+    // No-op - cache removed
   }
 
   /**
