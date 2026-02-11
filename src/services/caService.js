@@ -44,7 +44,7 @@ class CAService {
         specialization: ca.specialization?.join(", ") || "Tax Consultant",
         experience: ca.experienceYears,
         location: ca.location,
-        profileImage: ca.profileImage,
+        image: ca.profileImage,
         verified: ca.status === "active",
         caType: ca.caType?.name,
       }));
@@ -122,7 +122,7 @@ class CAService {
         rating: Number(averageRating.toFixed(1)),
         reviewCount: parseInt(reviewStats?.totalReviews || 0, 10),
         location: ca.location,
-        profileImage: ca.profileImage,
+        image: ca.profileImage,
         verified: ca.status === "active",
         completedFilings: completedFilingsCount,
         commission: ca.commissionPercentage,
@@ -143,6 +143,7 @@ class CAService {
           name: r.user?.name,
           rating: r.rating,
           comment: r.review,
+          image: r.user?.profileImage,
           date: this.formatDate(r.createdAt),
         })),
       };
@@ -167,7 +168,12 @@ class CAService {
           {
             model: User,
             as: "user",
-            attributes: ["id", "name", "profileImage"],
+            attributes: [
+              "id",
+              "name",
+              "profileImage",
+              ["profileImage", "image"],
+            ],
           },
         ],
       });

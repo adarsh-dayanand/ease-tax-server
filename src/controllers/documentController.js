@@ -570,6 +570,7 @@ class DocumentController {
       };
       res.setHeader("Content-Type", contentTypes[ext] || "image/png");
       res.setHeader("Cache-Control", "public, max-age=86400"); // Cache for 24h
+      res.setHeader("Access-Control-Allow-Origin", "*"); // Allow all origins for images
 
       stream.pipe(res);
     } catch (error) {

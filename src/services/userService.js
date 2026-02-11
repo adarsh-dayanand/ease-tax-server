@@ -30,7 +30,7 @@ class UserService {
         id: user.id,
         name: user.name,
         email: user.email,
-        profileImage: user.profileImage,
+        image: user.profileImage,
         phone: user.phone,
         countryCode: user.countryCode || null,
         role: "user",
@@ -98,7 +98,13 @@ class UserService {
           {
             model: CA,
             as: "ca",
-            attributes: ["id", "name", "profileImage", "qualifications"],
+            attributes: [
+              "id",
+              "name",
+              "profileImage",
+              ["profileImage", "image"],
+              "qualifications",
+            ],
           },
           {
             model: CAService,
@@ -117,7 +123,7 @@ class UserService {
         id: sr.id,
         caId: sr.caId,
         caName: sr.ca?.name || "Pending",
-        caImage: sr.ca?.profileImage,
+        caImage: sr.ca?.profileImage || sr.ca?.image,
         caSpecialization: sr.ca?.qualifications?.[0] || "Chartered Accountant",
         purpose: sr.purpose,
         status: sr.status,

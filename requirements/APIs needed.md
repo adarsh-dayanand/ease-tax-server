@@ -10,7 +10,7 @@ interface UserState {
   id: string | null;
   name: string | null;
   email: string | null;
-  avatar: string | null;
+  image: string | null;
   phone?: string | null;
   role?: "user" | "ca" | null;
   pan?: string | null;
