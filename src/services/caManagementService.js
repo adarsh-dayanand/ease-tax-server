@@ -219,7 +219,7 @@ class CAManagementService {
         `[Dashboard] Rating distribution fetched for CA: ${caId} (${Date.now() - ratingStartTime}ms)`,
       );
 
-      dashboard = {
+      const dashboard = {
         ca: {
           id: ca.id,
           name: ca.name,
