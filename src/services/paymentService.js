@@ -83,17 +83,23 @@ class PaymentService {
           try {
             // Ensure keyId is available
             if (!this.razorpayKeyId) {
-              throw new Error("Payment gateway configuration error: Razorpay Key ID is missing");
+              throw new Error(
+                "Payment gateway configuration error: Razorpay Key ID is missing",
+              );
             }
 
             let paymentGatewayResponse;
             if (this.mockMode) {
-              paymentGatewayResponse = await this.createMockPayment(existingPayment);
+              paymentGatewayResponse =
+                await this.createMockPayment(existingPayment);
             } else {
               if (!this.razorpay) {
-                throw new Error("Razorpay not initialized. Please check API keys.");
+                throw new Error(
+                  "Razorpay not initialized. Please check API keys.",
+                );
               }
-              paymentGatewayResponse = await this.createRazorpayOrder(existingPayment);
+              paymentGatewayResponse =
+                await this.createRazorpayOrder(existingPayment);
             }
 
             await existingPayment.update({
@@ -122,11 +128,14 @@ class PaymentService {
               },
             };
           } catch (error) {
-            logger.error("Failed to create gateway order for existing payment:", {
-              error,
-              errorMessage: error?.message,
-              paymentId: existingPayment.id,
-            });
+            logger.error(
+              "Failed to create gateway order for existing payment:",
+              {
+                error,
+                errorMessage: error?.message,
+                paymentId: existingPayment.id,
+              },
+            );
             // Delete the existing payment and create a new one
             await existingPayment.destroy();
           }
@@ -169,7 +178,7 @@ class PaymentService {
           couponCode,
           userId,
           amount,
-          serviceRequest.serviceType
+          serviceRequest.serviceType,
         );
 
         if (couponResult.valid) {
@@ -209,7 +218,9 @@ class PaymentService {
       // Ensure keyId is available before proceeding
       if (!this.razorpayKeyId) {
         logger.error("Razorpay Key ID is not configured");
-        throw new Error("Payment gateway configuration error: Razorpay Key ID is missing");
+        throw new Error(
+          "Payment gateway configuration error: Razorpay Key ID is missing",
+        );
       }
 
       let paymentGatewayResponse;
@@ -239,8 +250,13 @@ class PaymentService {
           paymentId: payment.id,
         });
         await payment.destroy();
-        const errorMessage = gatewayError?.message || gatewayError?.toString() || "Unknown error occurred";
-        throw new Error(`Failed to create payment gateway order: ${errorMessage}`);
+        const errorMessage =
+          gatewayError?.message ||
+          gatewayError?.toString() ||
+          "Unknown error occurred";
+        throw new Error(
+          `Failed to create payment gateway order: ${errorMessage}`,
+        );
       }
 
       return {
@@ -321,7 +337,7 @@ class PaymentService {
           servicePrice = parseFloat(caService.customPrice);
         }
       }
-      
+
       const totalAmount = servicePrice || 2500; // Fallback
       // Final amount: (Service amount - booking fee) + GST
       const baseFinalAmount = totalAmount - this.bookingFee;
@@ -333,17 +349,23 @@ class PaymentService {
           try {
             // Ensure keyId is available
             if (!this.razorpayKeyId) {
-              throw new Error("Payment gateway configuration error: Razorpay Key ID is missing");
+              throw new Error(
+                "Payment gateway configuration error: Razorpay Key ID is missing",
+              );
             }
 
             let paymentGatewayResponse;
             if (this.mockMode) {
-              paymentGatewayResponse = await this.createMockPayment(existingPayment);
+              paymentGatewayResponse =
+                await this.createMockPayment(existingPayment);
             } else {
               if (!this.razorpay) {
-                throw new Error("Razorpay not initialized. Please check API keys.");
+                throw new Error(
+                  "Razorpay not initialized. Please check API keys.",
+                );
               }
-              paymentGatewayResponse = await this.createRazorpayOrder(existingPayment);
+              paymentGatewayResponse =
+                await this.createRazorpayOrder(existingPayment);
             }
 
             await existingPayment.update({
@@ -374,11 +396,14 @@ class PaymentService {
               },
             };
           } catch (error) {
-            logger.error("Failed to create gateway order for existing payment:", {
-              error,
-              errorMessage: error?.message,
-              paymentId: existingPayment.id,
-            });
+            logger.error(
+              "Failed to create gateway order for existing payment:",
+              {
+                error,
+                errorMessage: error?.message,
+                paymentId: existingPayment.id,
+              },
+            );
             // Delete the existing payment and create a new one
             await existingPayment.destroy();
           }
@@ -426,7 +451,7 @@ class PaymentService {
           couponCode,
           userId,
           finalAmount,
-          serviceRequest.serviceType
+          serviceRequest.serviceType,
         );
 
         if (couponResult.valid) {
@@ -486,7 +511,9 @@ class PaymentService {
       // Ensure keyId is available
       if (!this.razorpayKeyId) {
         logger.error("Razorpay Key ID is not configured");
-        throw new Error("Payment gateway configuration error: Razorpay Key ID is missing");
+        throw new Error(
+          "Payment gateway configuration error: Razorpay Key ID is missing",
+        );
       }
 
       return {
@@ -522,7 +549,12 @@ class PaymentService {
    */
   async getPaymentStatus(paymentId) {
     try {
-       catch (error) {
+      const payment = await Payment.findByPk(paymentId);
+      if (!payment) {
+        throw new Error("Payment not found");
+      }
+      return payment;
+    } catch (error) {
       logger.error("Error getting payment status:", error);
       throw error;
     }
@@ -652,7 +684,7 @@ class PaymentService {
         refundReason: reason,
       });
 
-            await this.clearPaymentCache(paymentId);
+      await this.clearPaymentCache(paymentId);
 
       return {
         refundId: refund.id,
@@ -678,7 +710,9 @@ class PaymentService {
 
       // If webhook secret is not configured, log warning but allow (for development)
       if (!this.webhookSecret) {
-        logger.warn("RAZORPAY_WEBHOOK_SECRET not configured. Webhook verification skipped.");
+        logger.warn(
+          "RAZORPAY_WEBHOOK_SECRET not configured. Webhook verification skipped.",
+        );
         return true; // Allow in development, but should be configured for production
       }
 
@@ -701,7 +735,10 @@ class PaymentService {
     try {
       const { event, payload: webhookPayload } = payload;
 
-      logger.info("Razorpay webhook received", { event, payload: webhookPayload });
+      logger.info("Razorpay webhook received", {
+        event,
+        payload: webhookPayload,
+      });
 
       if (event === "payment.captured") {
         const paymentEntity = webhookPayload?.payment?.entity || webhookPayload;
@@ -736,7 +773,9 @@ class PaymentService {
       if (payment && payment.status === "pending") {
         // Fetch payment details from Razorpay
         if (this.razorpay && orderEntity.id) {
-          const payments = await this.razorpay.orders.fetchPayments(orderEntity.id);
+          const payments = await this.razorpay.orders.fetchPayments(
+            orderEntity.id,
+          );
           if (payments && payments.items && payments.items.length > 0) {
             const paymentEntity = payments.items[0];
             await this.handlePaymentSuccess(paymentEntity);
@@ -799,9 +838,9 @@ class PaymentService {
 
       // Generate receipt ID (max 40 chars for Razorpay)
       // Use first 32 chars of payment ID (UUID is 36 chars, so this gives us room for prefix)
-      const receiptId = payment.id.replace(/-/g, '').substring(0, 32); // Remove dashes and take first 32 chars
+      const receiptId = payment.id.replace(/-/g, "").substring(0, 32); // Remove dashes and take first 32 chars
       const receipt = `rcpt_${receiptId}`; // Total: 5 + 32 = 37 chars (under 40 limit)
-      
+
       const orderOptions = {
         amount: Math.round(payment.amount * 100), // Convert to paise
         currency: payment.currency || "INR",
@@ -815,7 +854,10 @@ class PaymentService {
       };
 
       const order = await this.razorpay.orders.create(orderOptions);
-      logger.info("Razorpay order created", { orderId: order.id, paymentId: payment.id });
+      logger.info("Razorpay order created", {
+        orderId: order.id,
+        paymentId: payment.id,
+      });
 
       return order;
     } catch (error) {
@@ -827,15 +869,15 @@ class PaymentService {
         errorReason: error?.error?.reason,
         fullError: JSON.stringify(error, Object.getOwnPropertyNames(error)),
       });
-      
+
       // Extract error message from various possible error structures
-      const errorMessage = 
-        error?.error?.description || 
-        error?.error?.reason || 
-        error?.message || 
-        error?.toString() || 
+      const errorMessage =
+        error?.error?.description ||
+        error?.error?.reason ||
+        error?.message ||
+        error?.toString() ||
         "Unknown error occurred";
-      
+
       throw new Error(`Failed to create Razorpay order: ${errorMessage}`);
     }
   }
@@ -855,13 +897,14 @@ class PaymentService {
         amount: Math.round(Math.abs(amount) * 100), // Convert to paise
         notes: {
           paymentId: payment.id,
-          refundReason: payment.metadata?.refundReason || "User requested refund",
+          refundReason:
+            payment.metadata?.refundReason || "User requested refund",
         },
       };
 
       const refund = await this.razorpay.payments.refund(
         payment.gatewayPaymentId,
-        refundOptions
+        refundOptions,
       );
 
       logger.info("Razorpay refund created", {
@@ -877,7 +920,11 @@ class PaymentService {
         errorMessage: error?.message,
         errorDescription: error?.error?.description,
       });
-      const errorMessage = error?.error?.description || error?.message || error?.toString() || "Unknown error occurred";
+      const errorMessage =
+        error?.error?.description ||
+        error?.message ||
+        error?.toString() ||
+        "Unknown error occurred";
       throw new Error(`Failed to create Razorpay refund: ${errorMessage}`);
     }
   }
@@ -923,14 +970,19 @@ class PaymentService {
           payment.id,
           payment.originalAmount,
           payment.discountAmount,
-          payment.amount
+          payment.amount,
         );
       }
 
       // Update service request status if needed
-      const serviceRequest = await ServiceRequest.findByPk(payment.serviceRequestId);
+      const serviceRequest = await ServiceRequest.findByPk(
+        payment.serviceRequestId,
+      );
       if (serviceRequest) {
-        if (payment.paymentType === "booking_fee" && serviceRequest.status === "accepted") {
+        if (
+          payment.paymentType === "booking_fee" &&
+          serviceRequest.status === "accepted"
+        ) {
           // Service request can move to next stage after booking payment
           // You can add logic here to update service request status
         }
@@ -995,7 +1047,8 @@ class PaymentService {
   }
 
   async clearPaymentCache(paymentId) {
-    try {          } catch (error) {
+    try {
+    } catch (error) {
       logger.error("Error clearing payment cache:", error);
     }
   }
@@ -1003,7 +1056,13 @@ class PaymentService {
   /**
    * Verify payment signature and update payment status
    */
-  async verifyPayment(paymentId, userId, orderId, paymentIdFromGateway, signature) {
+  async verifyPayment(
+    paymentId,
+    userId,
+    orderId,
+    paymentIdFromGateway,
+    signature,
+  ) {
     try {
       const payment = await Payment.findByPk(paymentId, {
         include: [
@@ -1026,7 +1085,7 @@ class PaymentService {
       const isValid = await this.verifyPaymentSignature(
         orderId,
         paymentIdFromGateway,
-        signature
+        signature,
       );
 
       if (!isValid) {
@@ -1046,9 +1105,13 @@ class PaymentService {
       // Fetch payment details from Razorpay to confirm
       if (this.razorpay) {
         try {
-          const razorpayPayment = await this.razorpay.payments.fetch(paymentIdFromGateway);
-          
-          if (razorpayPayment.status === "captured" || razorpayPayment.status === "authorized") {
+          const razorpayPayment =
+            await this.razorpay.payments.fetch(paymentIdFromGateway);
+
+          if (
+            razorpayPayment.status === "captured" ||
+            razorpayPayment.status === "authorized"
+          ) {
             await this.handlePaymentSuccess(razorpayPayment);
           } else if (razorpayPayment.status === "failed") {
             await this.handlePaymentFailure(razorpayPayment);

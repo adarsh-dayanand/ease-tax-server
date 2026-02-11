@@ -13,26 +13,52 @@ const { Op, QueryTypes } = require("sequelize");
 
 class CAService {
   /**
-   * Search and filter CAs with caching
+   * Search and filter CAs
    */
   async searchCAs(filters = {}, page = 1, limit = 10) {
     try {
-      );
+      const offset = (page - 1) * limit;
+      const whereClause = { status: "active" };
 
-        result = {
-          data: transformedCAs,
-          pagination: {
-            page,
-            limit,
-            total: count.length, // count is an array when using group
-            totalPages: Math.ceil(count.length / limit),
-          },
-          filters: filters,
+      if (filters.specialization) {
+        whereClause.specialization = {
+          [Op.contains]: [filters.specialization],
         };
+      }
 
-                      }
+      if (filters.location) {
+        whereClause.location = { [Op.iLike]: `%${filters.location}%` };
+      }
 
-      return result;
+      const { rows, count } = await CA.findAndCountAll({
+        where: whereClause,
+        include: [{ model: CAType, as: "caType" }],
+        limit,
+        offset,
+        order: [["experienceYears", "DESC"]],
+      });
+
+      const transformedCAs = rows.map((ca) => ({
+        id: ca.id,
+        name: ca.name,
+        specialization: ca.specialization?.join(", ") || "Tax Consultant",
+        experience: ca.experienceYears,
+        location: ca.location,
+        profileImage: ca.profileImage,
+        verified: ca.status === "active",
+        caType: ca.caType?.name,
+      }));
+
+      return {
+        data: transformedCAs,
+        pagination: {
+          page,
+          limit,
+          total: count,
+          totalPages: Math.ceil(count / limit),
+        },
+        filters,
+      };
     } catch (error) {
       logger.error("Error searching CAs:", error);
       throw error;
@@ -44,142 +70,81 @@ class CAService {
    */
   async getCAProfile(caId) {
     try {
-      
+      const ca = await CA.findByPk(caId, {
+        include: [{ model: CAType, as: "caType" }],
+      });
 
-        // Fetch all related data in parallel
-        const [
-          caServicesResult,
-          reviewsResult,
-          reviewStats,
-          completedFilingsResult,
-          ratingDistribution,
-        ] = await Promise.all([
-          // 1. Services
-          CAServiceModel.findAll({
-            where: { caId, isActive: true },
-            include: [
-              {
-                model: Service,
-                as: "service",
-                attributes: [
-                  "id",
-                  "name",
-                  "description",
-                  "category",
-                  "requirements",
-                  "deliverables",
-                ],
-              },
-            ],
-          }).catch((err) => {
-            logger.warn("Error getting CA services:", err.message);
-            return [];
-          }),
+      if (!ca) return null;
 
-          // 2. Recent Reviews
-          Review.findAll({
-            where: { caId },
-            limit: 10,
-            order: [["createdAt", "DESC"]],
-            include: [
-              {
-                model: User,
-                as: "user",
-                attributes: ["id", "name", "profileImage"],
-              },
-            ],
-          }).catch((err) => {
-            logger.warn("Error getting CA reviews:", err.message);
-            return [];
-          }),
+      // Fetch related data
+      const [
+        caServicesResult,
+        reviewsResult,
+        reviewStats,
+        completedFilingsCount,
+        ratingDistribution,
+      ] = await Promise.all([
+        CAServiceModel.findAll({
+          where: { caId, isActive: true },
+          include: [{ model: Service, as: "service" }],
+        }),
+        Review.findAll({
+          where: { caId },
+          limit: 10,
+          order: [["createdAt", "DESC"]],
+          include: [
+            {
+              model: User,
+              as: "user",
+              attributes: ["id", "name", "profileImage"],
+            },
+          ],
+        }),
+        Review.findOne({
+          where: { caId },
+          attributes: [
+            [sequelize.fn("COUNT", sequelize.col("id")), "totalReviews"],
+            [sequelize.fn("AVG", sequelize.col("rating")), "avgRating"],
+          ],
+          raw: true,
+        }),
+        ServiceRequest.count({ where: { caId, status: "completed" } }),
+        this.getCARatingDistribution(caId),
+      ]);
 
-          // 3. Review Stats (Count and Average)
-          Review.findOne({
-            where: { caId },
-            attributes: [
-              [sequelize.fn("COUNT", sequelize.col("id")), "totalReviews"],
-              [sequelize.fn("AVG", sequelize.col("rating")), "avgRating"],
-            ],
-            raw: true,
-          }).catch((err) => {
-            logger.warn("Error getting review stats:", err.message);
-            return { totalReviews: 0, avgRating: 0 };
-          }),
+      const averageRating = parseFloat(reviewStats?.avgRating || 0);
 
-          // 4. Completed Filings
-          ServiceRequest.count({
-            where: { caId, status: "completed" },
-          }).catch((err) => {
-            logger.warn("Error getting completed filings count:", err.message);
-            return 0;
-          }),
-
-          // 5. Rating Distribution
-          this.getCARatingDistribution(caId),
-        ]);
-
-        const caServices = caServicesResult || [];
-        const reviews = reviewsResult || [];
-        const totalReviews = parseInt(reviewStats?.totalReviews || 0, 10);
-        const averageRating = parseFloat(reviewStats?.avgRating || 0);
-        const completedFilings = completedFilingsResult || 0;
-
-        caProfile = {
-          id: ca.id,
-          name: ca?.name,
-          specialization: ca?.qualifications?.join(", ") || "Tax Consultant",
-          experience: ca?.experienceYears,
-          rating:
-            averageRating && !isNaN(averageRating)
-              ? Number(averageRating.toFixed(1))
-              : 0,
-          reviewCount: totalReviews,
-          location: ca?.location,
-          profileImage: ca?.profileImage,
-          verified: ca?.status === "active",
-          completedFilings: completedFilings,
-          bio: ca?.bio,
-          qualifications: ca?.qualifications,
-          commission: ca?.commissionPercentage,
-          languages: ca?.languages,
-          caNumber: ca?.caNumber,
-          ratingDistribution: ratingDistribution,
-          caType: ca?.caType
-            ? {
-                id: ca.caType.id,
-                name: ca.caType.name,
-                description: ca.caType.description,
-              }
-            : null,
-          services:
-            caServices.map((caService) => ({
-              id: caService.service.id,
-              caServiceId: caService.id,
-              name: caService.service.name,
-              description: caService.service.description,
-              category: caService.service.category,
-              price: caService.customPrice || null,
-              duration: caService.customDuration || null,
-              currency: caService.currency || "INR",
-              experienceLevel: caService.experienceLevel,
-              requirements: caService.service.requirements || [],
-              deliverables: caService.service.deliverables || [],
-              notes: caService.notes,
-            })) || [],
-          reviews:
-            reviews.map((review) => ({
-              id: review.id,
-              name: review.user?.name,
-              profileImage: review?.user?.profileImage,
-              rating: review?.rating,
-              date: this.formatDate(review.createdAt),
-              comment: review.review,
-            })) || [],
-        };
-
-                      }
-
-      return caProfile;
+      return {
+        id: ca.id,
+        name: ca.name,
+        specialization: ca.specialization?.join(", ") || "Tax Consultant",
+        experience: ca.experienceYears,
+        rating: Number(averageRating.toFixed(1)),
+        reviewCount: parseInt(reviewStats?.totalReviews || 0, 10),
+        location: ca.location,
+        profileImage: ca.profileImage,
+        verified: ca.status === "active",
+        completedFilings: completedFilingsCount,
+        bio: ca.bio,
+        qualifications: ca.qualifications,
+        languages: ca.languages,
+        caType: ca.caType ? { id: ca.caType.id, name: ca.caType.name } : null,
+        ratingDistribution,
+        services: caServicesResult.map((cs) => ({
+          id: cs.service?.id,
+          caServiceId: cs.id,
+          name: cs.service?.name,
+          price: cs.customPrice,
+          currency: cs.currency || "INR",
+        })),
+        reviews: reviewsResult.map((r) => ({
+          id: r.id,
+          name: r.user?.name,
+          rating: r.rating,
+          comment: r.review,
+          date: this.formatDate(r.createdAt),
+        })),
+      };
     } catch (error) {
       logger.error("Error getting CA profile:", error);
       throw error;
@@ -191,7 +156,31 @@ class CAService {
    */
   async getCAReviews(caId, page = 1, limit = 10) {
     try {
-       catch (error) {
+      const offset = (page - 1) * limit;
+      const { rows, count } = await Review.findAndCountAll({
+        where: { caId },
+        limit,
+        offset,
+        order: [["createdAt", "DESC"]],
+        include: [
+          {
+            model: User,
+            as: "user",
+            attributes: ["id", "name", "profileImage"],
+          },
+        ],
+      });
+
+      return {
+        data: rows,
+        pagination: {
+          page,
+          limit,
+          total: count,
+          totalPages: Math.ceil(count / limit),
+        },
+      };
+    } catch (error) {
       logger.error("Error getting CA reviews:", error);
       throw error;
     }
@@ -199,95 +188,31 @@ class CAService {
 
   /**
    * Submit a review for a CA
-   * @param {string} userId - User ID submitting the review
-   * @param {string} caId - CA ID being reviewed
-   * @param {string} serviceRequestId - Service request ID
-   * @param {number} rating - Rating (1-5)
-   * @param {string} review - Review text (optional)
-   * @returns {Promise<Object>} Created review
    */
   async submitReview(userId, caId, serviceRequestId, rating, review = null) {
     try {
-      // Verify the service request exists and belongs to the user
-      const serviceRequest = await ServiceRequest.findByPk(serviceRequestId, {
-        include: [
-          {
-            model: CA,
-            as: "ca",
-            attributes: ["id"],
-          },
-        ],
-      });
-        throw new Error("Service request not found");
-      }
+      const serviceRequest = await ServiceRequest.findByPk(serviceRequestId);
+      if (!serviceRequest) throw new Error("Service request not found");
+      if (serviceRequest.userId !== userId) throw new Error("Unauthorized");
+      if (serviceRequest.caId !== caId) throw new Error("CA mismatch");
+      if (serviceRequest.status !== "completed")
+        throw new Error("Service not completed");
 
-      if (serviceRequest.userId !== userId) {
-        throw new Error(
-          "Unauthorized: Service request does not belong to user",
-        );
-      }
-
-      if (serviceRequest.caId !== caId) {
-        throw new Error("CA ID mismatch");
-      }
-
-      // Check if service is completed
-      if (serviceRequest.status !== "completed") {
-        throw new Error("Can only review completed services");
-      }
-
-      // Check if review already exists for this service request
-      const existingReview = await Review.findOne({
-        where: {
-          serviceRequestId,
-          userId,
-          caId,
+      const [newReview, created] = await Review.findOrCreate({
+        where: { serviceRequestId, userId, caId },
+        defaults: {
+          rating,
+          review,
+          isVerified: true,
+          reviewType: "overall",
         },
       });
 
-      if (existingReview) {
-        // Update existing review
-        await existingReview.update({
-          rating,
-          review: review || existingReview.review,
-        });
-
-                .CA_REVIEWS(caId));
-        .CA_PROFILE(caId));
-
-        return {
-          id: existingReview.id,
-          rating: existingReview.rating,
-          review: existingReview.review,
-          createdAt: existingReview.createdAt,
-          updatedAt: existingReview.updatedAt,
-        };
+      if (!created) {
+        await newReview.update({ rating, review: review || newReview.review });
       }
 
-      // Create new review
-      const newReview = await Review.create({
-        serviceRequestId,
-        caId,
-        userId,
-        rating,
-        review,
-        isVerified: true, // Auto-verify reviews for completed services
-        reviewType: "overall",
-      });
-
-            .CA_REVIEWS(caId));
-      .CA_PROFILE(caId));
-      .CA_RATING_DISTRIBUTION(caId),
-      );
-      .CA_DASHBOARD(caId));
-
-      return {
-        id: newReview.id,
-        rating: newReview.rating,
-        review: newReview.review,
-        createdAt: newReview.createdAt,
-        updatedAt: newReview.updatedAt,
-      };
+      return newReview;
     } catch (error) {
       logger.error("Error submitting review:", error);
       throw error;
@@ -295,31 +220,17 @@ class CAService {
   }
 
   /**
-   * CA availability is now handled through consultation requests
-   * Users can request consultations and CAs will respond with their available times
-   */
-
-  /**
    * Get popular CAs
    */
   async getPopularCAs(limit = 10) {
     try {
-      );
+      const cas = await CA.findAll({
+        where: { status: "active" },
+        limit,
+        order: [["experienceYears", "DESC"]],
+      });
 
-        // Sort by rating, reviewCount, completedFilings (consultations)
-        popularCAs.sort((a, b) => {
-          if (b.rating !== a.rating) return b.rating - a.rating;
-          if (b.reviewCount !== a.reviewCount)
-            return b.reviewCount - a.reviewCount;
-          return b.completedFilings - a.completedFilings;
-        });
-
-        // Take only the requested limit
-        popularCAs = popularCAs.slice(0, limit);
-
-                      }
-
-      return popularCAs;
+      return Promise.all(cas.map((ca) => this.getCAProfile(ca.id)));
     } catch (error) {
       logger.error("Error getting popular CAs:", error);
       throw error;
@@ -327,59 +238,35 @@ class CAService {
   }
 
   /**
-   * Get CA rating distribution (count of each rating from 1-5)
+   * Get CA rating distribution
    */
   async getCARatingDistribution(caId) {
     try {
-      ,
-          { rating: 2, count: 0 },
-          { rating: 3, count: 0 },
-          { rating: 4, count: 0 },
-          { rating: 5, count: 0 },
-        ];
-      }
+      const stats = await Review.findAll({
+        where: { caId },
+        attributes: [
+          "rating",
+          [sequelize.fn("COUNT", sequelize.col("id")), "count"],
+        ],
+        group: ["rating"],
+        raw: true,
+      });
 
-      // Ensure all ratings are numbers
-      ratingDistribution = ratingDistribution.map((item) => ({
-        rating: Number(item.rating),
-        count: Number(item.count) || 0,
-      }));
+      const distribution = [1, 2, 3, 4, 5].map((r) => {
+        const found = stats.find((s) => Number(s.rating) === r);
+        return { rating: r, count: found ? parseInt(found.count, 10) : 0 };
+      });
 
-      return ratingDistribution;
+      return distribution;
     } catch (error) {
-      logger.error("Error getting CA rating distribution:", error);
-      // Return default distribution with 0 counts on error
-      return [
-        { rating: 1, count: 0 },
-        { rating: 2, count: 0 },
-        { rating: 3, count: 0 },
-        { rating: 4, count: 0 },
-        { rating: 5, count: 0 },
-      ];
+      logger.error("Error getting rating distribution:", error);
+      return [1, 2, 3, 4, 5].map((r) => ({ rating: r, count: 0 }));
     }
   }
 
-  /**
-   * Helper methods
-   */
-
   formatDate(date) {
-    const now = new Date();
-    const reviewDate = new Date(date);
-    const diffTime = Math.abs(now - reviewDate);
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    if (diffDays === 1) return "1 day ago";
-    if (diffDays < 7) return `${diffDays} days ago`;
-    if (diffDays < 30) return `${Math.ceil(diffDays / 7)} weeks ago`;
-    if (diffDays < 365) return `${Math.ceil(diffDays / 30)} months ago`;
-    return `${Math.ceil(diffDays / 365)} years ago`;
+    return new Date(date).toLocaleDateString();
   }
-
-  /**
-   * Clear CA related cache
-   */
-  
 }
 
 module.exports = new CAService();

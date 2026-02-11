@@ -1,42 +1,51 @@
-const { User, ServiceRequest, Payment, Review } = require("../../models");
+const { User, ServiceRequest, Payment, Review, CA } = require("../../models");
 const logger = require("../config/logger");
 const { Op } = require("sequelize");
 
 class UserService {
   /**
-   * Get user profile with caching
+   * Get user profile
    */
   async getUserProfile(userId) {
     try {
-      
+      const user = await User.findByPk(userId, {
+        include: [
+          {
+            model: ServiceRequest,
+            as: "serviceRequests",
+            limit: 5,
+            order: [["createdAt", "DESC"]],
+            include: [{ model: CA, as: "ca", attributes: ["name"] }],
+          },
+        ],
+      });
 
-        // Transform data for API response using actual User model fields
-        const userData = {
-          id: userProfile.id,
-          name: userProfile.name,
-          email: userProfile.email,
-          profileImage: userProfile.profileImage, // actual field name is profileImage
-          phone: userProfile.phone,
-          countryCode: userProfile.countryCode || null,
-          role: "user", // Users are always 'user' role
-          pan: userProfile.pan,
-          gstin: userProfile.gstin,
-          phoneVerified: userProfile.phoneVerified,
-          recentFilings:
-            userProfile.serviceRequests?.map((sr) => ({
-              id: sr.id,
-              year: this.getTaxYear(sr.createdAt),
-              status: sr.status,
-              ca: sr.ca?.name || "Pending CA Assignment",
-              filedDate: sr.completedAt || sr.updatedAt,
-              refundAmount: "TBD",
-            })) || [],
-        };
-
-                        userProfile = userData;
+      if (!user) {
+        return null;
       }
 
-      return userProfile;
+      // Transform data for API response
+      return {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        profileImage: user.profileImage,
+        phone: user.phone,
+        countryCode: user.countryCode || null,
+        role: "user",
+        pan: user.pan,
+        gstin: user.gstin,
+        phoneVerified: user.phoneVerified,
+        recentFilings:
+          user.serviceRequests?.map((sr) => ({
+            id: sr.id,
+            year: this.getTaxYear(sr.createdAt),
+            status: sr.status,
+            ca: sr.ca?.name || "Pending CA Assignment",
+            filedDate: sr.completedAt || sr.updatedAt,
+            refundAmount: "TBD",
+          })) || [],
+      };
     } catch (error) {
       logger.error("Error getting user profile:", error);
       throw error;
@@ -54,19 +63,55 @@ class UserService {
       }
 
       await user.update(updateData);
+      return this.getUserProfile(userId);
+    } catch (error) {
+      logger.error("Error updating user profile:", error);
+      throw error;
+    }
+  }
 
-            ),
-          pagination: {
-            page,
-            limit,
-            total: count,
-            totalPages: Math.ceil(count / limit),
+  /**
+   * Get user consultations
+   */
+  async getUserConsultations(userId, page = 1, limit = 10) {
+    try {
+      const offset = (page - 1) * limit;
+      const { rows, count } = await ServiceRequest.findAndCountAll({
+        where: { userId },
+        limit,
+        offset,
+        order: [["createdAt", "DESC"]],
+        include: [
+          { model: CA, as: "ca", attributes: ["id", "name", "profileImage"] },
+          {
+            model: Payment,
+            as: "payments",
+            attributes: ["status", "paymentType"],
           },
-        };
+        ],
+      });
 
-                      }
+      const consultations = rows.map((sr) => ({
+        id: sr.id,
+        caId: sr.caId,
+        caName: sr.ca?.name || "Pending",
+        caImage: sr.ca?.profileImage,
+        purpose: sr.purpose,
+        status: sr.status,
+        paymentStatus: this.getPaymentStatus(sr.payments),
+        progress: this.calculateProgress(sr.status),
+        createdAt: sr.createdAt,
+      }));
 
-      return consultations;
+      return {
+        data: consultations,
+        pagination: {
+          page,
+          limit,
+          total: count,
+          totalPages: Math.ceil(count / limit),
+        },
+      };
     } catch (error) {
       logger.error("Error getting user consultations:", error);
       throw error;
@@ -74,22 +119,68 @@ class UserService {
   }
 
   /**
-   * Get user filings with caching
+   * Get user filings
    */
   async getUserFilings(userId, page = 1, limit = 10) {
     try {
-       catch (error) {
+      const offset = (page - 1) * limit;
+      const { rows, count } = await ServiceRequest.findAndCountAll({
+        where: {
+          userId,
+          status: { [Op.in]: ["completed", "filed", "processing"] },
+        },
+        limit,
+        offset,
+        order: [["createdAt", "DESC"]],
+        include: [{ model: CA, as: "ca", attributes: ["name"] }],
+      });
+
+      const filings = rows.map((sr) => ({
+        id: sr.id,
+        year: this.getTaxYear(sr.createdAt),
+        status: sr.status,
+        ca: sr.ca?.name || "System",
+        filedDate: sr.completedAt || sr.updatedAt,
+      }));
+
+      return {
+        data: filings,
+        pagination: {
+          page,
+          limit,
+          total: count,
+          totalPages: Math.ceil(count / limit),
+        },
+      };
+    } catch (error) {
       logger.error("Error getting user filings:", error);
       throw error;
     }
   }
 
   /**
-   * Get user payments with caching
+   * Get user payments
    */
   async getUserPayments(userId, page = 1, limit = 10) {
     try {
-       catch (error) {
+      const offset = (page - 1) * limit;
+      const { rows, count } = await Payment.findAndCountAll({
+        where: { userId },
+        limit,
+        offset,
+        order: [["createdAt", "DESC"]],
+      });
+
+      return {
+        data: rows,
+        pagination: {
+          page,
+          limit,
+          total: count,
+          totalPages: Math.ceil(count / limit),
+        },
+      };
+    } catch (error) {
       logger.error("Error getting user payments:", error);
       throw error;
     }
@@ -137,12 +228,10 @@ class UserService {
   }
 
   /**
-   * Clear user related cache
+   * Clear user related cache (No-op after Redis removal)
    */
   async clearUserCache(userId) {
-    try {    } catch (error) {
-      logger.error("Error clearing user cache:", error);
-    }
+    return true;
   }
 }
 
