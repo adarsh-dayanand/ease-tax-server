@@ -125,6 +125,7 @@ class CAService {
         profileImage: ca.profileImage,
         verified: ca.status === "active",
         completedFilings: completedFilingsCount,
+        commission: ca.commissionPercentage,
         bio: ca.bio,
         qualifications: ca.qualifications,
         languages: ca.languages,

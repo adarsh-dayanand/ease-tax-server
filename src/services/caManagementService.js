@@ -54,7 +54,7 @@ class CAManagementService {
               where: {
                 payeeId: caId,
                 status: "completed",
-                paymentType: "service_fee",
+                paymentType: { [Op.in]: ["service_fee", "booking_fee"] },
               },
               attributes: [
                 "id",
@@ -62,6 +62,7 @@ class CAManagementService {
                 "commissionAmount",
                 "netAmount",
                 "commissionPercentage",
+                "paymentType",
                 "metadata",
               ],
               raw: true,
@@ -131,14 +132,21 @@ class CAManagementService {
       const earningsStartTime = Date.now();
       const caCommissionPercentage =
         parseFloat(ca?.commissionPercentage) || 8.0;
+      logger.info(
+        `[Dashboard] Commission percentage for CA ${caId}: ${caCommissionPercentage}`,
+      );
       const bookingFee = 999;
 
       let totalGrossEarnings = 0;
       let totalCommission = 0;
+
+      logger.info(
+        `[Dashboard] Processing ${paymentsForEarnings.length} payments for CA: ${caId}`,
+      );
+
       const totalEarnings = paymentsForEarnings.reduce((sum, payment) => {
-        // If netAmount is already calculated and stored, we could use it,
-        // but we follow current logic for precision as requested.
         const amount = parseFloat(payment.amount) || 0;
+        const storedCommission = parseFloat(payment.commissionAmount) || 0;
 
         // Extract service price (totalAmount) from metadata
         let servicePrice = null;
@@ -160,20 +168,29 @@ class CAManagementService {
           }
         }
 
-        // If servicePrice not found in metadata, calculate it from amount
-        // amount = (servicePrice - bookingFee) + GST
-        // amount = (servicePrice - 999) * 1.18
-        // So: servicePrice = (amount / 1.18) + 999
+        // If servicePrice not found in metadata, calculate/assign it
         if (!servicePrice || servicePrice <= 0) {
-          const baseFinalAmount = amount / 1.18; // Remove GST to get (servicePrice - bookingFee)
-          servicePrice = baseFinalAmount + bookingFee;
+          if (payment.paymentType === "service_fee") {
+            const baseFinalAmount = amount / 1.18; // Remove GST to get (servicePrice - bookingFee)
+            servicePrice = baseFinalAmount + bookingFee;
+          } else if (payment.paymentType === "booking_fee") {
+            servicePrice = bookingFee;
+          } else {
+            servicePrice = amount;
+          }
         }
 
-        // Calculate net amount correctly: servicePrice - commission on servicePrice
-        // Commission should be calculated on full servicePrice, not on (servicePrice - bookingFee)
+        // Calculate commission
         const paymentCommissionPercentage =
           parseFloat(payment.commissionPercentage) || caCommissionPercentage;
-        const commission = (servicePrice * paymentCommissionPercentage) / 100;
+
+        let commission = 0;
+        if (storedCommission > 0) {
+          commission = storedCommission;
+        } else {
+          commission = (servicePrice * paymentCommissionPercentage) / 100;
+        }
+
         const netAmount = servicePrice - commission;
 
         totalGrossEarnings += servicePrice;
@@ -181,8 +198,10 @@ class CAManagementService {
 
         logger.debug("Earnings calculation", {
           paymentId: payment.id,
+          type: payment.paymentType,
           amount,
           servicePrice,
+          storedCommission,
           commissionPercentage: paymentCommissionPercentage,
           commission,
           netAmount,
