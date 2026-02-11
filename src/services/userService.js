@@ -1,5 +1,4 @@
 const { User, ServiceRequest, Payment, Review } = require("../../models");
-const cacheService = require("./cacheService");
 const logger = require("../config/logger");
 const { Op } = require("sequelize");
 
@@ -9,33 +8,7 @@ class UserService {
    */
   async getUserProfile(userId) {
     try {
-      const cacheKey = cacheService.getCacheKeys().USER_PROFILE(userId);
-
-      // Try to get from cache first
-      let userProfile = await cacheService.get(cacheKey);
-
-      if (!userProfile) {
-        // Get from database - User model doesn't have password field (OAuth only)
-        userProfile = await User.findByPk(userId, {
-          include: [
-            {
-              model: ServiceRequest,
-              as: "serviceRequests",
-              limit: 5,
-              order: [["createdAt", "DESC"]],
-              include: [
-                {
-                  model: Review,
-                  as: "review",
-                },
-              ],
-            },
-          ],
-        });
-
-        if (!userProfile) {
-          return null;
-        }
+      
 
         // Transform data for API response using actual User model fields
         const userData = {
@@ -60,9 +33,7 @@ class UserService {
             })) || [],
         };
 
-        // Cache for 30 minutes
-        await cacheService.set(cacheKey, userData, 1800);
-        userProfile = userData;
+                        userProfile = userData;
       }
 
       return userProfile;
@@ -84,79 +55,7 @@ class UserService {
 
       await user.update(updateData);
 
-      // Clear cache
-      const cacheKey = cacheService.getCacheKeys().USER_PROFILE(userId);
-      await cacheService.del(cacheKey);
-
-      // Return updated profile
-      return await this.getUserProfile(userId);
-    } catch (error) {
-      logger.error("Error updating user profile:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get user consultations with caching
-   */
-  async getUserConsultations(userId, page = 1, limit = 10) {
-    try {
-      const cacheKey = cacheService.getCacheKeys().USER_CONSULTATIONS(userId);
-      let consultations = await cacheService.get(cacheKey);
-
-      if (!consultations) {
-        const offset = (page - 1) * limit;
-
-        const { rows, count } = await ServiceRequest.findAndCountAll({
-          where: { userId },
-          limit,
-          offset,
-          order: [["createdAt", "DESC"]],
-          include: [
-            {
-              model: require("../../models").CA,
-              as: "ca",
-              attributes: ["id", "name", "profileImage", "location"],
-            },
-            {
-              model: require("../../models").CAService,
-              as: "caService",
-              attributes: ["id", "customPrice", "currency", "experienceLevel"],
-            },
-            {
-              model: require("../../models").Payment,
-              as: "payments",
-              attributes: ["id", "amount", "status", "paymentType"],
-            },
-          ],
-        });
-
-        consultations = {
-          data: rows.map((sr) => {
-            // Get base service price from CAService.customPrice (CA's price for this service)
-            const servicePrice = sr.caService?.customPrice
-              ? parseFloat(sr.caService.customPrice)
-              : null;
-
-            return {
-              id: sr.id,
-              caName: sr.ca?.name || "Pending CA Assignment",
-              caImage: sr.ca?.profileImage,
-              type: "video", // Default consultation type
-              purpose: sr.purpose,
-              status: sr.status,
-              paymentStatus: this.getPaymentStatus(sr.payments),
-              durationMinutes: 30, // Default duration
-              experienceLevel: sr.caService?.experienceLevel,
-              currency: sr?.caService?.currency || "INR",
-              servicePrice: servicePrice, // The base service price from CAService.customPrice
-              price: servicePrice, // For backward compatibility
-              notes: sr.additionalNotes,
-              progress: this.calculateProgress(sr.status),
-              createdAt: sr.createdAt,
-              updatedAt: sr.updatedAt,
-            };
-          }),
+            ),
           pagination: {
             page,
             limit,
@@ -165,9 +64,7 @@ class UserService {
           },
         };
 
-        // Cache for 15 minutes
-        await cacheService.set(cacheKey, consultations, 900);
-      }
+                      }
 
       return consultations;
     } catch (error) {
@@ -181,54 +78,7 @@ class UserService {
    */
   async getUserFilings(userId, page = 1, limit = 10) {
     try {
-      const cacheKey = cacheService.getCacheKeys().USER_FILINGS(userId);
-
-      let filings = await cacheService.get(cacheKey);
-
-      if (!filings) {
-        const offset = (page - 1) * limit;
-
-        const { rows, count } = await ServiceRequest.findAndCountAll({
-          where: {
-            userId,
-            status: { [Op.in]: ["completed", "in_progress"] },
-          },
-          limit,
-          offset,
-          order: [["completedAt", "DESC"]],
-          include: [
-            {
-              model: require("../../models").CA,
-              as: "ca",
-              attributes: ["id", "name"],
-            },
-          ],
-        });
-
-        filings = {
-          data: rows.map((sr) => ({
-            id: sr.id,
-            year: this.getTaxYear(sr.createdAt),
-            status: sr.status,
-            ca: sr.ca?.name || "CA Name",
-            filedDate: sr.completedAt,
-            refundAmount: sr.finalAmount ? `₹${sr.finalAmount}` : "TBD",
-            serviceType: sr.serviceType,
-          })),
-          pagination: {
-            page,
-            limit,
-            total: count,
-            totalPages: Math.ceil(count / limit),
-          },
-        };
-
-        // Cache for 1 hour
-        await cacheService.set(cacheKey, filings, 3600);
-      }
-
-      return filings;
-    } catch (error) {
+       catch (error) {
       logger.error("Error getting user filings:", error);
       throw error;
     }
@@ -239,74 +89,7 @@ class UserService {
    */
   async getUserPayments(userId, page = 1, limit = 10) {
     try {
-      const cacheKey = cacheService.getCacheKeys().USER_PAYMENTS(userId);
-
-      let payments = await cacheService.get(cacheKey);
-
-      if (!payments) {
-        const offset = (page - 1) * limit;
-
-        const { rows, count } = await Payment.findAndCountAll({
-          where: { payerId: userId },
-          limit,
-          offset,
-          order: [["createdAt", "DESC"]],
-          attributes: [
-            "id",
-            "serviceRequestId",
-            "amount",
-            "currency",
-            "status",
-            "paymentMethod",
-            "transactionReference",
-            "createdAt",
-            "updatedAt",
-          ],
-          include: [
-            {
-              model: ServiceRequest,
-              as: "serviceRequest",
-              attributes: ["id", "userId", "caId"],
-              include: [
-                {
-                  model: require("../../models").CA,
-                  as: "ca",
-                  attributes: ["id", "name"],
-                },
-              ],
-            },
-          ],
-        });
-
-        payments = {
-          data: rows.map((payment) => ({
-            id: payment.id,
-            amount: payment.amount,
-            currency: payment.currency,
-            status: payment.status,
-            type: payment.type,
-            paymentMethod: payment.paymentMethod,
-            transactionId: payment.transactionId,
-            serviceRequestId: payment.serviceRequestId,
-            caName: payment.serviceRequest?.ca?.name,
-            purpose: payment.description,
-            createdAt: payment.createdAt,
-            updatedAt: payment.updatedAt,
-          })),
-          pagination: {
-            page,
-            limit,
-            total: count,
-            totalPages: Math.ceil(count / limit),
-          },
-        };
-
-        // Cache for 30 minutes
-        await cacheService.set(cacheKey, payments, 1800);
-      }
-
-      return payments;
-    } catch (error) {
+       catch (error) {
       logger.error("Error getting user payments:", error);
       throw error;
     }
@@ -357,15 +140,7 @@ class UserService {
    * Clear user related cache
    */
   async clearUserCache(userId) {
-    try {
-      const keys = cacheService.getCacheKeys();
-      await Promise.all([
-        cacheService.del(keys.USER_PROFILE(userId)),
-        cacheService.del(keys.USER_CONSULTATIONS(userId)),
-        cacheService.del(keys.USER_FILINGS(userId)),
-        cacheService.del(keys.USER_PAYMENTS(userId)),
-      ]);
-    } catch (error) {
+    try {    } catch (error) {
       logger.error("Error clearing user cache:", error);
     }
   }

@@ -1,6 +1,5 @@
 const jwt = require("jsonwebtoken");
 const firebaseConfig = require("../config/firebase");
-const redisManager = require("../config/redis");
 const { User, CA, Admin } = require("../../models");
 const logger = require("../config/logger");
 const CONSTANTS = require("../config/constants");
@@ -33,22 +32,8 @@ const authenticateToken = async (req, res, next) => {
 
     if (firebaseResult.success) {
       const { uid, email } = firebaseResult.data;
-      const sessionCacheKey = `firebase_${uid}`;
 
-      // Check cache first
-      let reqUser = null;
-      try {
-        reqUser = await redisManager.getSession(sessionCacheKey);
-      } catch (err) {
-        logger.warn("Redis error during session check:", err.message);
-      }
-
-      if (reqUser) {
-        req.user = reqUser;
-        return next();
-      }
-
-      logger.info("Cache miss: Authenticating user with Firebase token", {
+      logger.info("Authenticating user with Firebase token", {
         uid,
         email,
       });
@@ -177,37 +162,12 @@ const authenticateToken = async (req, res, next) => {
         emailVerified: true,
       };
 
-      // Cache user session for 24 hours
-      await redisManager
-        .setSession(sessionCacheKey, req.user, 24 * 60 * 60)
-        .catch(() => {});
-
       return next();
     }
 
     // If Firebase verification failed, try JWT verification
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-      // Check if session exists in Redis
-      let sessionData = null;
-      if (redisManager.client && redisManager.client.isReady) {
-        sessionData = await redisManager.getSession(decoded.sessionId);
-      } else {
-        logger.warn(
-          "Redis unavailable for session check, allowing auth with JWT only",
-        );
-      }
-
-      if (!sessionData) {
-        return res.status(401).json({
-          success: false,
-          error: {
-            code: CONSTANTS.ERROR_CODES.AUTH_TOKEN_EXPIRED,
-            message: "Session expired",
-          },
-        });
-      }
 
       // Verify user still exists
       let user;
@@ -218,7 +178,6 @@ const authenticateToken = async (req, res, next) => {
       }
 
       if (!user) {
-        await redisManager.deleteSession(decoded.sessionId);
         return res.status(401).json({
           success: false,
           error: {
@@ -430,23 +389,11 @@ const optionalAuth = async (req, res, next) => {
 
     if (firebaseResult.success) {
       const { uid, email } = firebaseResult.data;
-      const sessionCacheKey = `firebase_${uid}`;
 
-      // Check cache first
-      let reqUser = null;
-      try {
-        reqUser = await redisManager.getSession(sessionCacheKey);
-      } catch (err) {}
-
-      if (reqUser) {
-        req.user = reqUser;
-        return next();
-      }
-
-      logger.info(
-        "Cache miss: Authenticating user with Firebase token (optional)",
-        { uid, email },
-      );
+      logger.info("Authenticating user with Firebase token (optional)", {
+        uid,
+        email,
+      });
 
       // Sequential checks
       let user = await User.findOne({
@@ -486,20 +433,16 @@ const optionalAuth = async (req, res, next) => {
           type: userType,
           firebaseUid: uid,
         };
-        // Cache user session
-        await redisManager
-          .setSession(sessionCacheKey, req.user, 24 * 60 * 60)
-          .catch(() => {});
       }
     } else {
       // Try JWT
       try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const sessionData = await redisManager.getSession(decoded.sessionId);
-
-        if (sessionData) {
-          req.user = sessionData;
-        }
+        // JWT verification successful
+        req.user = {
+          id: decoded.userId,
+          type: decoded.userType,
+        };
       } catch (jwtError) {}
     }
   } catch (error) {
@@ -531,24 +474,17 @@ const refreshTokenIfNeeded = async (req, res, next) => {
 
     if (expirationTime - now < thirtyMinutes) {
       // Generate new token
-      const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       const newToken = jwt.sign(
         {
           userId: req.user.id,
           userType: req.user.type,
-          sessionId,
         },
         process.env.JWT_SECRET,
         { expiresIn: process.env.JWT_EXPIRES_IN || "24h" },
       );
 
-      // Update session in Redis
-      await redisManager.setSession(sessionId, req.user);
-      await redisManager.deleteSession(req.user.sessionId);
-
       // Send new token in response header
       res.setHeader("X-New-Token", newToken);
-      req.user.sessionId = sessionId;
     }
   } catch (error) {
     logger.error("Token refresh error:", error);

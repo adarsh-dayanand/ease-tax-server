@@ -3,7 +3,6 @@ const multer = require("multer");
 const path = require("path");
 const crypto = require("crypto");
 const { Document } = require("../../models");
-const cacheService = require("./cacheService");
 const logger = require("../config/logger");
 
 // Configure AWS S3
@@ -103,8 +102,7 @@ class DocumentService {
         },
       });
 
-      // Clear cache
-      await this.clearDocumentCache(serviceRequestId);
+            await this.clearDocumentCache(serviceRequestId);
 
       return {
         id: document.id,
@@ -379,88 +377,7 @@ class DocumentService {
         }
       }
 
-      const cacheKey = cacheService
-        .getCacheKeys()
-        .CONSULTATION_DOCUMENTS(serviceRequestId);
-
-      let documents = await cacheService.get(cacheKey);
-
-      if (!documents) {
-        const { Op } = require("sequelize");
-        const docs = await Document.findAll({
-          where: {
-            serviceRequestId,
-            status: { [Op.ne]: "deleted" },
-          },
-          order: [["createdAt", "DESC"]],
-          include: [
-            {
-              model: require("../../models").User,
-              as: "uploaderUser",
-              attributes: ["id", "name"],
-              required: false,
-            },
-            {
-              model: require("../../models").CA,
-              as: "uploaderCA",
-              attributes: ["id", "name"],
-              required: false,
-            },
-          ],
-        });
-
-        documents = docs.map((doc) => ({
-          id: doc.id,
-          name: doc.originalName,
-          size: this.formatFileSize(doc.fileSize),
-          uploadedAt: this.formatTimestamp(doc.createdAt),
-          type: doc.fileType,
-          status: doc.status,
-          uploader: doc.uploaderType,
-          uploaderName:
-            doc.uploaderUser?.name || doc.uploaderCA?.name || "Unknown",
-          mimeType: doc.mimeType,
-          downloadCount: doc.downloadCount,
-        }));
-
-        // Cache for 30 minutes
-        await cacheService.set(cacheKey, documents, 1800);
-      } else {
-        // Even if cached, filter out any deleted documents as a safeguard
-        // This handles cases where cache wasn't cleared properly
-        documents = documents.filter((doc) => doc.status !== "deleted");
-
-        // If we filtered out documents, update the cache
-        const { Op } = require("sequelize");
-        const currentDocs = await Document.findAll({
-          where: {
-            serviceRequestId,
-            status: { [Op.ne]: "deleted" },
-          },
-          attributes: ["id"],
-        });
-
-        const cachedIds = new Set(documents.map((d) => d.id));
-        const currentIds = new Set(currentDocs.map((d) => d.id.toString()));
-
-        // If cache is out of sync, refresh it
-        if (
-          cachedIds.size !== currentIds.size ||
-          !Array.from(cachedIds).every((id) => currentIds.has(id.toString()))
-        ) {
-          logger.info("Cache out of sync, refreshing consultation documents", {
-            serviceRequestId,
-            cachedCount: cachedIds.size,
-            currentCount: currentIds.size,
-          });
-
-          // Clear cache and fetch fresh data
-          await cacheService.del(cacheKey);
-          return await this.getServiceRequestDocuments(
-            serviceRequestId,
-            requestingUserId
-          );
-        }
+      
       }
 
       return documents;
@@ -539,8 +456,7 @@ class DocumentService {
         serviceRequestId: document.serviceRequestId,
       });
 
-      // Clear cache for consultation documents
-      await this.clearDocumentCache(document.serviceRequestId);
+            await this.clearDocumentCache(document.serviceRequestId);
 
       // Also clear user documents cache
       await this.clearUserDocumentsCache(document.uploadedBy);
@@ -592,8 +508,7 @@ class DocumentService {
 
       await document.update(updateData);
 
-      // Clear cache
-      await this.clearDocumentCache(document.serviceRequestId);
+            await this.clearDocumentCache(document.serviceRequestId);
 
       // Send real-time notification about document verification
       const notificationService = require("./notificationService");
@@ -732,8 +647,7 @@ class DocumentService {
       const cacheKey = cacheService
         .getCacheKeys()
         .CONSULTATION_DOCUMENTS(serviceRequestId);
-      await cacheService.del(cacheKey);
-      logger.info("Cleared consultation documents cache", { serviceRequestId });
+            logger.info("Cleared consultation documents cache", { serviceRequestId });
     } catch (error) {
       logger.error("Error clearing document cache:", error);
     }
@@ -744,16 +658,14 @@ class DocumentService {
    */
   async clearUserDocumentsCache(userId) {
     try {
-      // Clear cache for all possible user document queries
-      // Since we don't know the exact cache key format, we'll try common patterns
+            // Since we don't know the exact cache key format, we'll try common patterns
       const cacheKeys = [
         `user_documents_${userId}`,
         `easetax:user:${userId}:documents`,
       ];
 
       for (const key of cacheKeys) {
-        await cacheService.del(key);
-      }
+              }
       logger.info("Cleared user documents cache", { userId });
     } catch (error) {
       logger.error("Error clearing user documents cache:", error);

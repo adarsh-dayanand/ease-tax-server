@@ -7,7 +7,6 @@ const {
   Message,
   Review,
 } = require("../../models");
-const cacheService = require("./cacheService");
 const logger = require("../config/logger");
 const { Op } = require("sequelize");
 
@@ -64,9 +63,8 @@ class ConsultationService {
 
       // Clear related caches
       await this.clearConsultationCache(consultation.id);
-      await cacheService.delPattern(`user:consultations:${userId}`);
-      // Clear CA dashboard cache since a new request was created
-      await cacheService.del(cacheService.getCacheKeys().CA_DASHBOARD(caService.caId));
+            // Clear CA dashboard cache since a new request was created
+      .CA_DASHBOARD(caService.caId));
 
       return await this.getConsultationDetails(consultation.id);
     } catch (error) {
@@ -80,63 +78,7 @@ class ConsultationService {
    */
   async getConsultationDetails(consultationId) {
     try {
-      const cacheKey = cacheService.getCacheKeys().CONSULTATION(consultationId);
-      await cacheService.del(cacheKey);
-      let consultation = await cacheService.get(cacheKey);
-
-      if (!consultation) {
-        const serviceRequest = await ServiceRequest.findByPk(consultationId, {
-          include: [
-            {
-              model: User,
-              as: "user",
-              attributes: ["id", "name", "email", "profileImage"],
-            },
-            {
-              model: CA,
-              as: "ca",
-              attributes: ["id", "name", "profileImage", "location"],
-            },
-            {
-              model: CAService,
-              as: "caService",
-              attributes: [
-                "id",
-                "customPrice",
-                "currency",
-                "experienceLevel",
-                "customDuration",
-              ],
-              include: [
-                {
-                  model: require("../../models").Service,
-                  as: "service",
-                  attributes: ["id", "name", "description", "category"],
-                },
-              ],
-            },
-            {
-              model: Payment,
-              as: "payments",
-              attributes: [
-                "id",
-                "amount",
-                "currency",
-                "status",
-                "paymentType",
-                "paymentGateway",
-                "paymentMethod",
-                "transactionReference",
-                "createdAt",
-                "updatedAt",
-              ],
-            },
-          ],
-        });
-
-        if (!serviceRequest) {
-          return null;
-        }
+      
 
         // Get base service price from CAService.customPrice (CA's price for this service)
         const servicePrice = serviceRequest.caService?.customPrice
@@ -194,9 +136,7 @@ class ConsultationService {
           hasReviewed: !!existingReview,
         };
 
-        // Cache for 15 minutes
-        await cacheService.set(cacheKey, consultation, 900);
-      }
+                      }
 
       return consultation;
     } catch (error) {
@@ -240,8 +180,7 @@ class ConsultationService {
         },
       });
 
-      // Clear cache
-      await this.clearConsultationCache(consultationId);
+            await this.clearConsultationCache(consultationId);
 
       return {
         success: true,
@@ -259,63 +198,7 @@ class ConsultationService {
    */
   async getConsultationMessages(consultationId, page = 1, limit = 50) {
     try {
-      const cacheKey = cacheService
-        .getCacheKeys()
-        .CONSULTATION_MESSAGES(consultationId);
-
-      let messages = await cacheService.get(cacheKey);
-
-      if (!messages) {
-        const offset = (page - 1) * limit;
-
-        const { rows, count } = await Message.findAndCountAll({
-          where: { serviceRequestId: consultationId },
-          limit,
-          offset,
-          order: [["createdAt", "ASC"]],
-          include: [
-            {
-              model: User,
-              as: "senderUser",
-              attributes: ["id", "name", "profileImage"],
-            },
-          ],
-        });
-
-        messages = {
-          data: rows.map((message) => ({
-            id: message.id,
-            serviceRequestId: message.serviceRequestId,
-            senderId: message.senderId,
-            senderType: message.senderType,
-            senderName: message.senderUser?.name,
-            senderAvatar: message.senderUser?.profileImage,
-            receiverId: message.receiverId,
-            receiverType: message.receiverType,
-            messageType: message.messageType || "text",
-            content: message.content,
-            attachmentUrl: message.attachmentUrl,
-            attachmentType: message.attachmentType,
-            attachmentName: message.attachmentName,
-            timestamp: message.createdAt,
-            isDelivered: message.isDelivered,
-            isRead: message.isRead,
-            hasAttachment: !!message.attachmentUrl,
-          })),
-          pagination: {
-            page,
-            limit,
-            total: count,
-            totalPages: Math.ceil(count / limit),
-          },
-        };
-
-        // Cache for 5 minutes (messages are dynamic)
-        await cacheService.set(cacheKey, messages, 300);
-      }
-
-      return messages;
-    } catch (error) {
+       catch (error) {
       logger.error("Error getting consultation messages:", error);
       throw error;
     }
@@ -376,8 +259,7 @@ class ConsultationService {
       const cacheKey = cacheService
         .getCacheKeys()
         .CONSULTATION_MESSAGES(consultationId);
-      await cacheService.del(cacheKey);
-
+      
       return {
         id: messageWithSender.id,
         serviceRequestId: consultationId,
@@ -443,8 +325,7 @@ class ConsultationService {
         },
       });
 
-      // Clear cache
-      await this.clearConsultationCache(consultationId);
+            await this.clearConsultationCache(consultationId);
 
       return await this.getConsultationDetails(consultationId);
     } catch (error) {
@@ -516,14 +397,7 @@ class ConsultationService {
    * Clear consultation related cache
    */
   async clearConsultationCache(consultationId) {
-    try {
-      const keys = cacheService.getCacheKeys();
-      await Promise.all([
-        cacheService.del(keys.CONSULTATION(consultationId)),
-        cacheService.del(keys.CONSULTATION_MESSAGES(consultationId)),
-        cacheService.del(keys.CONSULTATION_DOCUMENTS(consultationId)),
-      ]);
-    } catch (error) {
+    try {    } catch (error) {
       logger.error("Error clearing consultation cache:", error);
     }
   }

@@ -6,7 +6,6 @@ const {
   Review,
   Notification,
 } = require("../../models");
-const cacheService = require("./cacheService");
 const logger = require("../config/logger");
 const { Op, fn, col, literal } = require("sequelize");
 const bcrypt = require("bcryptjs");

@@ -2,8 +2,6 @@ const { Server } = require("socket.io");
 const jwt = require("jsonwebtoken");
 const firebaseConfig = require("../config/firebase");
 const { Message, ServiceRequest, User, CA } = require("../../models");
-const cacheService = require("../services/cacheService");
-const redisManager = require("../config/redis");
 const logger = require("../config/logger");
 
 class WebSocketService {
@@ -37,7 +35,7 @@ class WebSocketService {
           }
 
           logger.warn(`WebSocket CORS: Origin ${origin} not allowed`);
-          return callback(new Error('Not allowed by CORS'));
+          return callback(new Error("Not allowed by CORS"));
         },
         methods: ["GET", "POST"],
         credentials: true,
@@ -88,7 +86,10 @@ class WebSocketService {
         }
 
         if (!user) {
-          logger.warn("WebSocket auth: user not found in database", { uid, email });
+          logger.warn("WebSocket auth: user not found in database", {
+            uid,
+            email,
+          });
           return next(new Error("User not found"));
         }
 
@@ -192,7 +193,11 @@ class WebSocketService {
   async handleJoinServiceRequest(socket, data) {
     try {
       const { serviceRequestId } = data;
-      console.log('WebSocket: User joining service request:', socket.userId, serviceRequestId);
+      console.log(
+        "WebSocket: User joining service request:",
+        socket.userId,
+        serviceRequestId,
+      );
 
       // Verify user has access to this service request
       const serviceRequest = await ServiceRequest.findByPk(serviceRequestId);
@@ -242,7 +247,7 @@ class WebSocketService {
       });
 
       logger.info(
-        `User ${socket.userId} joined service request ${serviceRequestId}`
+        `User ${socket.userId} joined service request ${serviceRequestId}`,
       );
     } catch (error) {
       logger.error("Error joining service request:", error);
@@ -276,7 +281,7 @@ class WebSocketService {
       socket.emit("service_request_left", { serviceRequestId });
 
       logger.info(
-        `User ${socket.userId} left service request ${serviceRequestId}`
+        `User ${socket.userId} left service request ${serviceRequestId}`,
       );
     } catch (error) {
       logger.error("Error leaving service request:", error);
@@ -289,7 +294,7 @@ class WebSocketService {
    */
   async handleSendMessage(socket, data) {
     try {
-      console.log('WebSocket: Received send_message:', data);
+      console.log("WebSocket: Received send_message:", data);
       const {
         serviceRequestId,
         content,
@@ -333,12 +338,6 @@ class WebSocketService {
         deliveredAt: this.isUserOnline(receiverId) ? new Date() : null,
       });
 
-      // Clear message cache
-      const cacheKey = cacheService
-        .getCacheKeys()
-        .CONSULTATION_MESSAGES(serviceRequestId);
-      await cacheService.del(cacheKey);
-
       // Prepare message data
       const messageData = {
         id: message.id,
@@ -351,7 +350,9 @@ class WebSocketService {
         content,
         messageType,
         attachmentUrl,
-        attachmentType: attachmentUrl ? this.getAttachmentType(attachmentUrl) : null,
+        attachmentType: attachmentUrl
+          ? this.getAttachmentType(attachmentUrl)
+          : null,
         attachmentName: null, // Will be set if attachment is uploaded
         timestamp: message.createdAt,
         isDelivered: message.isDelivered,
@@ -360,7 +361,11 @@ class WebSocketService {
 
       // Send to room
       const roomId = `service_request:${serviceRequestId}`;
-      console.log('WebSocket: Emitting new_message to room:', roomId, messageData);
+      console.log(
+        "WebSocket: Emitting new_message to room:",
+        roomId,
+        messageData,
+      );
       this.io.to(roomId).emit("new_message", messageData);
 
       // Send push notification to offline users
@@ -373,7 +378,7 @@ class WebSocketService {
       }
 
       logger.info(
-        `Message sent in service request ${serviceRequestId} by ${socket.userId}`
+        `Message sent in service request ${serviceRequestId} by ${socket.userId}`,
       );
     } catch (error) {
       logger.error("Error sending message:", error);
@@ -429,14 +434,8 @@ class WebSocketService {
             receiverId: socket.userId,
             isRead: false,
           },
-        }
+        },
       );
-
-      // Clear cache
-      const cacheKey = cacheService
-        .getCacheKeys()
-        .CONSULTATION_MESSAGES(serviceRequestId);
-      await cacheService.del(cacheKey);
 
       // Notify sender about read receipts
       const roomId = `service_request:${serviceRequestId}`;
@@ -480,7 +479,7 @@ class WebSocketService {
       });
 
       logger.info(
-        `Document uploaded notification sent in service request ${serviceRequestId} by ${socket.userId}`
+        `Document uploaded notification sent in service request ${serviceRequestId} by ${socket.userId}`,
       );
     } catch (error) {
       logger.error("Error handling document uploaded:", error);
@@ -519,11 +518,13 @@ class WebSocketService {
       });
 
       logger.info(
-        `Document verification notification sent in service request ${serviceRequestId} by ${socket.userId}`
+        `Document verification notification sent in service request ${serviceRequestId} by ${socket.userId}`,
       );
     } catch (error) {
       logger.error("Error handling document verified:", error);
-      socket.emit("error", { message: "Failed to handle document verification" });
+      socket.emit("error", {
+        message: "Failed to handle document verification",
+      });
     }
   }
 

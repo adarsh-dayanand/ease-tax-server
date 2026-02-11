@@ -7,7 +7,6 @@ const {
   Meeting,
   sequelize,
 } = require("../../models");
-const cacheService = require("./cacheService");
 const vcSchedulingService = require("./vcSchedulingService");
 const logger = require("../config/logger");
 const { Op, where } = require("sequelize");
@@ -22,17 +21,7 @@ class CAManagementService {
       const startTime = Date.now();
       logger.info(`[Dashboard] Starting dashboard fetch for CA: ${caId}`);
 
-      const cacheKey = cacheService.getCacheKeys().CA_DASHBOARD(caId);
-      let dashboard = await cacheService.get(cacheKey);
-
-      if (dashboard) {
-        logger.info(
-          `[Dashboard] Cache hit for CA: ${caId} (${Date.now() - startTime}ms)`,
-        );
-        return dashboard;
-      }
-
-      logger.info(`[Dashboard] Cache miss, fetching from DB for CA: ${caId}`);
+      logger.info(`[Dashboard] Fetching from DB for CA: ${caId}`);
       const dbStartTime = Date.now();
 
       // Get basic stats and data in parallel
@@ -277,9 +266,6 @@ class CAManagementService {
         `[Dashboard] Dashboard built successfully for CA: ${caId}, total time: ${Date.now() - startTime}ms`,
       );
 
-      // Cache for 10 minutes
-      await cacheService.set(cacheKey, dashboard, 600);
-
       return dashboard;
     } catch (error) {
       logger.error("Error getting CA dashboard:", error);
@@ -492,9 +478,6 @@ class CAManagementService {
         },
       });
 
-      // Clear cache
-      await this.clearCACache(caId);
-
       return {
         id: request.id,
         status: request.status,
@@ -536,9 +519,6 @@ class CAManagementService {
           rejectionReason: reason,
         },
       });
-
-      // Clear cache
-      await this.clearCACache(caId);
 
       return {
         id: request.id,
@@ -587,8 +567,6 @@ class CAManagementService {
         },
       });
 
-      await this.clearCACache(caId);
-
       return {
         id: request.id,
         status: request.status,
@@ -635,8 +613,6 @@ class CAManagementService {
 
       // Update CA's completed filings count
       await CA.increment("completedFilings", { where: { id: caId } });
-
-      await this.clearCACache(caId);
 
       return {
         id: request.id,
@@ -705,9 +681,6 @@ class CAManagementService {
       });
 
       await ca.update(filteredData);
-
-      // Clear cache
-      await this.clearCACache(caId);
 
       return await this.getCAProfile(caId);
     } catch (error) {
@@ -834,22 +807,6 @@ class CAManagementService {
     if (hasBookingFee && hasServiceFee) return "fully_paid";
     if (hasBookingFee) return "booking_paid";
     return "unpaid";
-  }
-
-  /**
-   * Clear CA related cache
-   */
-  async clearCACache(caId) {
-    try {
-      const keys = cacheService.getCacheKeys();
-      await Promise.all([
-        cacheService.del(keys.CA_DASHBOARD(caId)),
-        cacheService.del(keys.CA_PROFILE(caId)),
-        cacheService.delPattern(`ca:requests:${caId}*`),
-      ]);
-    } catch (error) {
-      logger.error("Error clearing CA cache:", error);
-    }
   }
 }
 

@@ -1,5 +1,4 @@
 const userService = require("../services/userService");
-const cacheService = require("../services/cacheService");
 const logger = require("../config/logger");
 
 class UserController {

@@ -1,5 +1,4 @@
 const { Notification, User, CA, ServiceRequest } = require("../../models");
-const cacheService = require("./cacheService");
 const emailService = require("./emailService");
 const logger = require("../config/logger");
 const { Op } = require("sequelize");
@@ -62,111 +61,7 @@ class NotificationService {
       });
 
       // Clear user notifications cache
-      const cacheKey = cacheService
-        .getCacheKeys()
-        .USER_NOTIFICATIONS(recipientId);
-      await cacheService.del(cacheKey);
-
-      // Send real-time notification via WebSocket if immediate
-      if (!scheduledFor && this.socketio) {
-        await this.sendRealTimeNotification(
-          recipientId,
-          recipientType,
-          notification,
-        );
-      }
-
-      return notification;
-    } catch (error) {
-      logger.error("Error creating notification:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get user notifications with caching
-   */
-  async getUserNotifications(
-    recipientId,
-    recipientType = "user",
-    page = 1,
-    limit = 20,
-    unreadOnly = false,
-  ) {
-    try {
-      const cacheKey = cacheService
-        .getCacheKeys()
-        .USER_NOTIFICATIONS(`${recipientId}:${unreadOnly}:${page}:${limit}`);
-
-      let notifications = await cacheService.get(cacheKey);
-
-      if (!notifications) {
-        const offset = (page - 1) * limit;
-
-        const whereClause = {
-          recipientId,
-          recipientType,
-          channel: "in_app",
-        };
-
-        if (unreadOnly) {
-          whereClause.isRead = false;
-        }
-
-        const { rows, count } = await Notification.findAndCountAll({
-          where: whereClause,
-          limit,
-          offset,
-          order: [["createdAt", "DESC"]],
-          attributes: [
-            "id",
-            "title",
-            "message",
-            "notificationType",
-            "priority",
-            "actionUrl",
-            "actionText",
-            "serviceRequestId",
-            "isRead",
-            "readAt",
-            "createdAt",
-          ],
-        });
-
-        const unreadCount = await Notification.getUnreadCount(
-          recipientId,
-          recipientType,
-        );
-
-        notifications = {
-          data: rows.map((notification) => ({
-            id: notification.id,
-            title: notification.title,
-            message: notification.message,
-            notificationType: notification.notificationType,
-            priority: notification.priority,
-            actionUrl: notification.actionUrl,
-            actionText: notification.actionText,
-            serviceRequestId: notification.serviceRequestId,
-            isRead: notification.isRead,
-            readAt: notification.readAt,
-            createdAt: notification.createdAt,
-          })),
-          pagination: {
-            page,
-            limit,
-            total: count,
-            totalPages: Math.ceil(count / limit),
-          },
-          unreadCount,
-        };
-
-        // Cache for 5 minutes
-        await cacheService.set(cacheKey, notifications, 300);
-      }
-
-      return notifications;
-    } catch (error) {
+       catch (error) {
       logger.error("Error getting user notifications:", error);
       throw error;
     }
@@ -191,12 +86,10 @@ class NotificationService {
 
       await notification.markAsRead();
 
-      // Clear cache
-      const cacheKey = cacheService
+            const cacheKey = cacheService
         .getCacheKeys()
         .USER_NOTIFICATIONS(recipientId);
-      await cacheService.del(cacheKey);
-
+      
       return true;
     } catch (error) {
       logger.error("Error marking notification as read:", error);
@@ -211,12 +104,10 @@ class NotificationService {
     try {
       await Notification.markAllAsRead(recipientId, recipientType);
 
-      // Clear cache
-      const cacheKey = cacheService
+            const cacheKey = cacheService
         .getCacheKeys()
         .USER_NOTIFICATIONS(recipientId);
-      await cacheService.del(cacheKey);
-
+      
       return true;
     } catch (error) {
       logger.error("Error marking all notifications as read:", error);
@@ -272,13 +163,11 @@ class NotificationService {
 
       await Notification.bulkCreate(notifications);
 
-      // Clear cache for all users
-      for (const recipient of recipients) {
+            for (const recipient of recipients) {
         const cacheKey = cacheService
           .getCacheKeys()
           .USER_NOTIFICATIONS(recipient.id);
-        await cacheService.del(cacheKey);
-
+        
         // Send real-time notification if immediate
         if (!scheduledFor && this.socketio) {
           await this.sendRealTimeNotification(recipient.id, recipient.type, {

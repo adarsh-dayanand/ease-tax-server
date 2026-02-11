@@ -1,6 +1,5 @@
 const { Payment, ServiceRequest, User, CA } = require("../../models");
 const { Op } = require("sequelize");
-const cacheService = require("./cacheService");
 const couponService = require("./couponService");
 const logger = require("../config/logger");
 const crypto = require("crypto");
@@ -523,58 +522,7 @@ class PaymentService {
    */
   async getPaymentStatus(paymentId) {
     try {
-      const cacheKey = cacheService.getCacheKeys().PAYMENT_STATUS(paymentId);
-
-      let paymentStatus = await cacheService.get(cacheKey);
-
-      if (!paymentStatus) {
-        const payment = await Payment.findByPk(paymentId, {
-          include: [
-            {
-              model: ServiceRequest,
-              as: "serviceRequest",
-              include: [
-                {
-                  model: CA,
-                  as: "ca",
-                  attributes: ["id", "name"],
-                },
-              ],
-            },
-          ],
-        });
-
-        if (!payment) {
-          throw new Error("Payment not found");
-        }
-
-        paymentStatus = {
-          id: payment.id,
-          amount: payment.amount,
-          currency: payment.currency,
-          status: payment.status,
-          paymentType: payment.paymentType,
-          gatewayOrderId: payment.gatewayOrderId,
-          gatewayPaymentId: payment.gatewayPaymentId,
-          transactionReference: payment.transactionReference,
-          paymentMethod: payment.paymentMethod,
-          serviceRequestId: payment.serviceRequestId,
-          caName: payment.serviceRequest?.ca?.name,
-          paymentDate: payment.paymentDate,
-          createdAt: payment.createdAt,
-          updatedAt: payment.updatedAt,
-          failureReason: payment.failureReason,
-          isEscrow: payment.isEscrow,
-          escrowReleaseDate: payment.escrowReleaseDate,
-        };
-
-        // Cache completed payments for longer, pending ones for shorter duration
-        const cacheTime = payment.status === "completed" ? 3600 : 300;
-        await cacheService.set(cacheKey, paymentStatus, cacheTime);
-      }
-
-      return paymentStatus;
-    } catch (error) {
+       catch (error) {
       logger.error("Error getting payment status:", error);
       throw error;
     }
@@ -704,8 +652,7 @@ class PaymentService {
         refundReason: reason,
       });
 
-      // Clear cache
-      await this.clearPaymentCache(paymentId);
+            await this.clearPaymentCache(paymentId);
 
       return {
         refundId: refund.id,
@@ -1048,10 +995,7 @@ class PaymentService {
   }
 
   async clearPaymentCache(paymentId) {
-    try {
-      const cacheKey = cacheService.getCacheKeys().PAYMENT_STATUS(paymentId);
-      await cacheService.del(cacheKey);
-    } catch (error) {
+    try {          } catch (error) {
       logger.error("Error clearing payment cache:", error);
     }
   }

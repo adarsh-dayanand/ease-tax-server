@@ -53,11 +53,12 @@ const {
   logRateLimitViolation,
 } = require("./middleware/rateLimit");
 
-// 7. DB and Redis imports
-const { connectRedis } = require("./redis");
-const redisManager = require("./config/redis");
+// 7. Service imports
+const webSocketService = require("./websocket/chatService");
 
-// 8. Route imports
+const notificationService = require("./services/notificationService");
+
+// 8. Middleware imports
 const authRoutes = require("./routes/auth");
 const userRoutes = require("./routes/users");
 const caRoutes = require("./routes/ca");
@@ -94,9 +95,6 @@ require("./config/swagger")(app);
 
 // Connections
 console.log("🔌 Initializing connections...");
-redisManager
-  .connect()
-  .catch((err) => logger.warn("Redis connection warning:", err));
 
 // Initialize WS
 const io = webSocketService.initialize(server);
@@ -122,7 +120,6 @@ const healthCheck = (req, res) => {
     status: "OK",
     timestamp: new Date().toISOString(),
     service: "EaseTax Backend API",
-    redis: redisManager.isConnected ? "connected" : "disconnected",
   });
 };
 
@@ -168,22 +165,6 @@ server.listen(PORT, async () => {
 
   // Initialize WebSocket
   logger.info("WebSocket service initialized");
-
-  // Connect to Redis asynchronously (don't block server startup)
-  connectRedis()
-    .then(() => {
-      logger.info("Redis initialization complete");
-    })
-    .catch((error) => {
-      logger.error(
-        "Redis initialization failed, server will run without cache:",
-        {
-          message: error.message,
-          code: error.code,
-        },
-      );
-      // Server continues running without Redis
-    });
 });
 
 // Graceful shutdown

@@ -1,6 +1,5 @@
 const rateLimit = require("express-rate-limit");
 const slowDown = require("express-slow-down");
-const redisManager = require("../config/redis");
 const logger = require("../config/logger");
 const CONSTANTS = require("../config/constants");
 
