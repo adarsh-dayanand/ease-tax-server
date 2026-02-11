@@ -29,7 +29,7 @@ class DocumentController {
         userId,
         req.file,
         documentType,
-        serviceRequestId
+        serviceRequestId,
       );
 
       res.status(201).json({
@@ -74,7 +74,7 @@ class DocumentController {
         consultationId,
         userId,
         req.file,
-        documentType
+        documentType,
       );
 
       res.status(201).json({
@@ -143,7 +143,7 @@ class DocumentController {
       if (consultationId) {
         const Document = require("../../models").Document;
         const document = await Document.findByPk(docId);
-        
+
         if (!document) {
           return res.status(404).json({
             success: false,
@@ -173,7 +173,9 @@ class DocumentController {
       if (fileInfo.downloadUrl) {
         // Check if client wants JSON response (for frontend to handle download)
         const acceptHeader = req.headers.accept || "";
-        const wantsJson = acceptHeader.includes("application/json") || req.query.format === "json";
+        const wantsJson =
+          acceptHeader.includes("application/json") ||
+          req.query.format === "json";
 
         if (wantsJson) {
           // Return URL as JSON for frontend to handle
@@ -199,9 +201,14 @@ class DocumentController {
       if (fileInfo.path) {
         res.setHeader(
           "Content-Disposition",
-          `attachment; filename="${encodeURIComponent(fileInfo.filename)}"`
+          `attachment; filename="${encodeURIComponent(fileInfo.filename)}"`,
         );
-        res.setHeader("Content-Type", fileInfo.contentType || fileInfo.mimetype || "application/octet-stream");
+        res.setHeader(
+          "Content-Type",
+          fileInfo.contentType ||
+            fileInfo.mimetype ||
+            "application/octet-stream",
+        );
         return res.sendFile(fileInfo.path, { root: "." });
       }
 
@@ -276,7 +283,7 @@ class DocumentController {
       if (consultationId) {
         const Document = require("../../models").Document;
         const document = await Document.findByPk(docId);
-        
+
         if (!document) {
           return res.status(404).json({
             success: false,
@@ -410,7 +417,7 @@ class DocumentController {
         userId,
         parseInt(page),
         parseInt(limit),
-        documentType
+        documentType,
       );
 
       res.json({
@@ -533,6 +540,45 @@ class DocumentController {
         success: false,
         message: "Internal server error",
       });
+    }
+  }
+  /**
+   * Get profile image (proxy)
+   * GET /documents/profile-image/:userType/:filename
+   */
+  async getProfileImage(req, res) {
+    try {
+      const { userType, filename } = req.params;
+      const key = `profile_images/${userType}/${filename}`;
+
+      const stream = documentService.getProfileImageStream(key);
+
+      stream.on("error", (error) => {
+        logger.error("S3 stream error:", error);
+        if (!res.headersSent) {
+          res.status(404).json({ success: false, message: "Image not found" });
+        }
+      });
+
+      // Set content type based on extension
+      const ext = filename.split(".").pop().toLowerCase();
+      const contentTypes = {
+        png: "image/png",
+        jpg: "image/jpeg",
+        jpeg: "image/jpeg",
+        webp: "image/webp",
+      };
+      res.setHeader("Content-Type", contentTypes[ext] || "image/png");
+      res.setHeader("Cache-Control", "public, max-age=86400"); // Cache for 24h
+
+      stream.pipe(res);
+    } catch (error) {
+      logger.error("Error in getProfileImage proxy:", error);
+      if (!res.headersSent) {
+        res
+          .status(500)
+          .json({ success: false, message: "Internal server error" });
+      }
     }
   }
 }

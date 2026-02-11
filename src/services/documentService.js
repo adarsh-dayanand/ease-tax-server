@@ -705,10 +705,29 @@ class DocumentService {
         ContentType: contentType,
       };
 
-      const result = await s3.upload(uploadParams).promise();
-      return result.Location;
+      await s3.upload(uploadParams).promise();
+
+      // Return the proxy URL instead of direct S3 URL
+      const backendUrl = process.env.BACKEND_URL || "http://localhost:3000";
+      return `${backendUrl}/api/documents/profile-image/${userType}/${fileName.split("/").pop()}`;
     } catch (error) {
       logger.error("Error uploading profile image:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get profile image stream from S3
+   */
+  getProfileImageStream(key) {
+    try {
+      const params = {
+        Bucket: BUCKET_NAME,
+        Key: key,
+      };
+      return s3.getObject(params).createReadStream();
+    } catch (error) {
+      logger.error("Error creating S3 read stream:", error);
       throw error;
     }
   }

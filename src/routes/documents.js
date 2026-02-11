@@ -9,18 +9,25 @@ const { securityHeaders, sanitizeInput } = require("../middleware/security");
 // Document upload middleware
 const upload = documentService.getUploadMiddleware();
 
+// Public profile image proxy
+router.get(
+  "/profile-image/:userType/:filename",
+  rateLimit.apiRateLimit,
+  documentController.getProfileImage,
+);
+
 // Public routes (guidelines and types)
 router.get(
   "/types",
   rateLimit.apiRateLimit,
   securityHeaders,
-  documentController.getDocumentTypes
+  documentController.getDocumentTypes,
 );
 router.get(
   "/guidelines",
   rateLimit.apiRateLimit,
   securityHeaders,
-  documentController.getUploadGuidelines
+  documentController.getUploadGuidelines,
 );
 
 // Apply authentication to remaining routes
@@ -33,29 +40,29 @@ router.post(
   "/upload",
   rateLimit.uploadRateLimit,
   upload,
-  documentController.uploadDocument
+  documentController.uploadDocument,
 );
 
 // Document management
 router.get(
   "/:docId",
   rateLimit.apiRateLimit,
-  documentController.getDocumentDetails
+  documentController.getDocumentDetails,
 );
 router.get(
   "/:docId/download",
   rateLimit.downloadRateLimit,
-  documentController.downloadDocument
+  documentController.downloadDocument,
 );
 router.get(
   "/:docId/status",
   rateLimit.apiRateLimit,
-  documentController.getDocumentStatus
+  documentController.getDocumentStatus,
 );
 router.delete(
   "/:docId",
   rateLimit.apiRateLimit,
-  documentController.deleteDocument
+  documentController.deleteDocument,
 );
 
 module.exports = router;
