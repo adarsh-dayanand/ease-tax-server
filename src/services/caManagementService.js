@@ -133,6 +133,8 @@ class CAManagementService {
         parseFloat(ca?.commissionPercentage) || 8.0;
       const bookingFee = 999;
 
+      let totalGrossEarnings = 0;
+      let totalCommission = 0;
       const totalEarnings = paymentsForEarnings.reduce((sum, payment) => {
         // If netAmount is already calculated and stored, we could use it,
         // but we follow current logic for precision as requested.
@@ -173,6 +175,9 @@ class CAManagementService {
           parseFloat(payment.commissionPercentage) || caCommissionPercentage;
         const commission = (servicePrice * paymentCommissionPercentage) / 100;
         const netAmount = servicePrice - commission;
+
+        totalGrossEarnings += servicePrice;
+        totalCommission += commission;
 
         logger.debug("Earnings calculation", {
           paymentId: payment.id,
@@ -234,7 +239,9 @@ class CAManagementService {
           pendingRequests: pendingRequests || 0,
           acceptedRequests: acceptedRequests || 0,
           completedRequests: completedRequests || 0,
-          totalEarnings: totalEarnings || 0,
+          totalEarnings: Math.round(totalEarnings * 100) / 100 || 0,
+          totalCommission: Math.round(totalCommission * 100) / 100 || 0,
+          grossEarnings: Math.round(totalGrossEarnings * 100) / 100 || 0,
           avgRating: avgRating || 0,
           successRate: (() => {
             // Calculate success rate excluding pending requests

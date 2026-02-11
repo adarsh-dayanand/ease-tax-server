@@ -8,26 +8,23 @@ const { Service } = require("../../models");
  * After migration runs, this can be updated to use new enum values
  */
 function mapDisplayNameToEnum(displayName) {
-  // Map to OLD enum values that currently exist in the database:
-  // 'tax_filing', 'tax_planning', 'gst', 'audit', 'consultation', 'compliance', 'business_setup'
   const mapping = {
     "ITR Filing": "tax_filing",
-    "GST Registration": "gst",
-    "GST Filing": "gst",
-    "Company Registration": "business_setup",
-    "Trademark Registration": "business_setup",
-    "Tax Consultation": "consultation",
-    "Audit Services": "audit",
-    "Compliance Check": "compliance",
-    "Financial Consultation": "consultation",
-    "Other Services": "tax_filing", // Default fallback
+    "GST Registration": "gst_registration",
+    "GST Filing": "gst_return_filing",
+    "Company Registration": "company_registration",
+    "Trademark Registration": "trademark_registration",
+    "Tax Consultation": "tax_consultation",
+    "Audit Services": "audit_services",
+    "Compliance Check": "compliance_check",
+    "Financial Consultation": "financial_consultation",
+    "Other Services": "other",
   };
 
   return mapping[displayName] || displayName;
 }
 
 class CAServiceController {
-
   /**
    * Get CA's services
    * GET /ca-mgmt/services
@@ -39,7 +36,7 @@ class CAServiceController {
 
       const services = await caServiceManagementService.getCAServices(
         caId,
-        include_inactive === "true"
+        include_inactive === "true",
       );
 
       res.json({
@@ -78,7 +75,7 @@ class CAServiceController {
 
         const service = await caServiceManagementService.associateCAWithService(
           caId,
-          serviceData
+          serviceData,
         );
 
         res.json({
@@ -100,7 +97,7 @@ class CAServiceController {
 
         const service = await caServiceManagementService.upsertCAService(
           caId,
-          serviceData
+          serviceData,
         );
 
         res.json({
@@ -153,7 +150,7 @@ class CAServiceController {
 
       const service = await caServiceManagementService.toggleServiceStatus(
         caId,
-        serviceId
+        serviceId,
       );
 
       res.json({
@@ -258,7 +255,7 @@ class CAServiceController {
       const services =
         await caServiceManagementService.initializeCAServicesFromTemplates(
           caId,
-          selectedServices
+          selectedServices,
         );
 
       res.json({
@@ -364,7 +361,7 @@ class CAServiceController {
 
       // Find the Service from master Services table by category and/or name
       let service = null;
-      
+
       // Map frontend display name to backend enum value
       // Currently using old enum values that exist in the database
       const serviceCategoryEnum = serviceData.serviceCategory
@@ -408,16 +405,20 @@ class CAServiceController {
         try {
           service = await Service.create({
             name: serviceData.serviceName,
-            description: serviceData.serviceDescription || `Service: ${serviceData.serviceName}`,
+            description:
+              serviceData.serviceDescription ||
+              `Service: ${serviceData.serviceName}`,
             category: serviceCategoryEnum,
             isActive: true,
             requirements: [],
             deliverables: [],
           });
-          logger.info(`Created new Service: ${serviceData.serviceName} with category: ${serviceCategoryEnum}`);
+          logger.info(
+            `Created new Service: ${serviceData.serviceName} with category: ${serviceCategoryEnum}`,
+          );
         } catch (createError) {
           logger.error("Error creating Service:", createError);
-          
+
           // If creation fails due to enum issue, try to find any service in the category as fallback
           try {
             service = await Service.findOne({
@@ -438,7 +439,7 @@ class CAServiceController {
                 message: `Invalid service category. The category '${serviceCategoryEnum}' is not valid. Please use a valid category from the dropdown.`,
               });
             }
-            
+
             return res.status(400).json({
               success: false,
               message: `Unable to create or find service: ${createError.message || "Unknown error"}`,
@@ -460,7 +461,7 @@ class CAServiceController {
       // Associate CA with the service using the new pattern
       const caService = await caServiceManagementService.associateCAWithService(
         caId,
-        mappedServiceData
+        mappedServiceData,
       );
 
       res.json({

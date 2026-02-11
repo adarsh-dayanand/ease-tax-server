@@ -82,11 +82,20 @@ class UserService {
         offset,
         order: [["createdAt", "DESC"]],
         include: [
-          { model: CA, as: "ca", attributes: ["id", "name", "profileImage"] },
+          {
+            model: CA,
+            as: "ca",
+            attributes: ["id", "name", "profileImage", "qualifications"],
+          },
+          {
+            model: CAService,
+            as: "caService",
+            attributes: ["customPrice"],
+          },
           {
             model: Payment,
             as: "payments",
-            attributes: ["status", "paymentType"],
+            attributes: ["status", "paymentType", "amount"],
           },
         ],
       });
@@ -96,10 +105,13 @@ class UserService {
         caId: sr.caId,
         caName: sr.ca?.name || "Pending",
         caImage: sr.ca?.profileImage,
+        caSpecialization: sr.ca?.qualifications?.[0] || "Chartered Accountant",
         purpose: sr.purpose,
         status: sr.status,
         paymentStatus: this.getPaymentStatus(sr.payments),
         progress: this.calculateProgress(sr.status),
+        servicePrice:
+          sr.caService?.customPrice || sr.metadata?.totalAmount || 0,
         createdAt: sr.createdAt,
       }));
 
@@ -132,16 +144,37 @@ class UserService {
         limit,
         offset,
         order: [["createdAt", "DESC"]],
-        include: [{ model: CA, as: "ca", attributes: ["name"] }],
+        include: [
+          { model: CA, as: "ca", attributes: ["name"] },
+          {
+            model: Payment,
+            as: "payments",
+            attributes: ["amount", "paymentType", "status"],
+          },
+        ],
       });
 
-      const filings = rows.map((sr) => ({
-        id: sr.id,
-        year: this.getTaxYear(sr.createdAt),
-        status: sr.status,
-        ca: sr.ca?.name || "System",
-        filedDate: sr.completedAt || sr.updatedAt,
-      }));
+      const filings = rows.map((sr) => {
+        const refundPayments = (sr.payments || []).filter(
+          (p) =>
+            p.paymentType === "refund" &&
+            (p.status === "completed" || p.status === "success"),
+        );
+        const refundAmount = refundPayments.reduce(
+          (sum, p) => sum + parseFloat(p.amount || 0),
+          0,
+        );
+
+        return {
+          id: sr.id,
+          year: this.getTaxYear(sr.createdAt),
+          status: sr.status,
+          ca: sr.ca?.name || "System",
+          filedDate: sr.completedAt || sr.updatedAt,
+          refundAmount:
+            refundAmount > 0 ? `₹${refundAmount.toLocaleString()}` : "N/A",
+        };
+      });
 
       return {
         data: filings,
