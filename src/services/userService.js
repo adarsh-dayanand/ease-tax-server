@@ -127,7 +127,7 @@ class UserService {
       const { rows, count } = await ServiceRequest.findAndCountAll({
         where: {
           userId,
-          status: { [Op.in]: ["completed", "filed", "processing"] },
+          status: { [Op.in]: ["completed", "in_progress"] },
         },
         limit,
         offset,

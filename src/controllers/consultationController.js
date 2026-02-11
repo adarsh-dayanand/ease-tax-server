@@ -89,7 +89,7 @@ class ConsultationController {
       const result = await consultationService.cancelConsultation(
         consultationId,
         userId,
-        reason
+        reason,
       );
 
       res.json({
@@ -118,7 +118,7 @@ class ConsultationController {
       const messages = await consultationService.getConsultationMessages(
         consultationId,
         parseInt(page),
-        parseInt(limit)
+        parseInt(limit),
       );
 
       res.json({
@@ -156,7 +156,7 @@ class ConsultationController {
         consultationId,
         senderId,
         message,
-        attachmentUrl
+        attachmentUrl,
       );
 
       res.status(201).json({
@@ -184,7 +184,7 @@ class ConsultationController {
 
       const documents = await consultationService.getConsultationDocuments(
         consultationId,
-        userId
+        userId,
       );
 
       // Set cache control headers to prevent browser caching
@@ -227,16 +227,12 @@ class ConsultationController {
       // Validate status
       const validStatuses = [
         "pending",
-        "ca-assigned",
-        "documents-requested",
-        "documents-uploaded",
-        "under-review",
-        "clarification-needed",
-        "processing",
-        "filed",
+        "accepted",
+        "rejected",
+        "in_progress",
         "completed",
         "cancelled",
-        "rejected",
+        "escalated",
       ];
 
       if (!validStatuses.includes(status)) {
@@ -249,7 +245,7 @@ class ConsultationController {
       const consultation = await consultationService.updateConsultationStatus(
         consultationId,
         status,
-        userId
+        userId,
       );
 
       res.json({
