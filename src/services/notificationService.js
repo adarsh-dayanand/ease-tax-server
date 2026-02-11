@@ -16,6 +16,57 @@ class NotificationService {
   }
 
   /**
+   * Get user or CA notifications
+   */
+  async getUserNotifications(
+    recipientId,
+    recipientType,
+    page = 1,
+    limit = 20,
+    unreadOnly = false,
+  ) {
+    try {
+      const where = {
+        recipientId,
+        recipientType,
+        channel: "in_app",
+      };
+
+      if (unreadOnly) {
+        where.isRead = false;
+      }
+
+      const offset = (page - 1) * limit;
+
+      const { rows, count } = await Notification.findAndCountAll({
+        where,
+        limit,
+        offset,
+        order: [["createdAt", "DESC"]],
+      });
+
+      const unreadCount = await Notification.getUnreadCount(
+        recipientId,
+        recipientType,
+      );
+
+      return {
+        data: rows,
+        pagination: {
+          page,
+          limit,
+          total: count,
+          totalPages: Math.ceil(count / limit),
+        },
+        unreadCount,
+      };
+    } catch (error) {
+      logger.error("Error getting notifications:", error);
+      throw error;
+    }
+  }
+
+  /**
    * Create notification
    */
   async createNotification(
