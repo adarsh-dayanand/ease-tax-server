@@ -53,12 +53,7 @@ const {
   logRateLimitViolation,
 } = require("./middleware/rateLimit");
 
-// 7. Service imports
-const webSocketService = require("./websocket/chatService");
-
-const notificationService = require("./services/notificationService");
-
-// 8. Middleware imports
+// 7. Route imports
 const authRoutes = require("./routes/auth");
 const userRoutes = require("./routes/users");
 const caRoutes = require("./routes/ca");
