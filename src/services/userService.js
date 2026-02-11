@@ -1,6 +1,7 @@
 const { User, ServiceRequest, Payment, Review, CA } = require("../../models");
 const logger = require("../config/logger");
 const { Op } = require("sequelize");
+const documentService = require("./documentService");
 
 class UserService {
   /**
@@ -60,6 +61,18 @@ class UserService {
       const user = await User.findByPk(userId);
       if (!user) {
         throw new Error("User not found");
+      }
+
+      if (
+        updateData.profileImage &&
+        updateData.profileImage.startsWith("data:image/")
+      ) {
+        const s3Url = await documentService.uploadProfileImage(
+          updateData.profileImage,
+          userId,
+          "user",
+        );
+        updateData.profileImage = s3Url;
       }
 
       await user.update(updateData);

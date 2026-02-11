@@ -10,6 +10,7 @@ const {
 const vcSchedulingService = require("./vcSchedulingService");
 const logger = require("../config/logger");
 const { Op, where } = require("sequelize");
+const documentService = require("./documentService");
 const caService = require("./caService");
 
 class CAManagementService {
@@ -247,7 +248,7 @@ class CAManagementService {
         ca: {
           id: ca.id,
           name: ca.name,
-          image: ca.image,
+          image: ca.profileImage,
           verified: ca.verified,
           completedFilings: ca.completedFilings,
           specializations:
@@ -670,7 +671,7 @@ class CAManagementService {
         phone: ca.phone,
         countryCode: ca.countryCode || null,
         location: ca.location,
-        image: ca.image,
+        image: ca.profileImage,
         verified: ca.verified,
         completedFilings: ca?.completedFilings,
         phoneVerified: ca?.phoneVerified,
@@ -697,6 +698,7 @@ class CAManagementService {
         "countryCode",
         "location",
         "image",
+        "profileImage",
       ];
 
       const filteredData = {};
@@ -705,6 +707,32 @@ class CAManagementService {
           filteredData[field] = updateData[field];
         }
       });
+
+      if (
+        updateData.profileImage &&
+        updateData.profileImage.startsWith("data:image/")
+      ) {
+        const s3Url = await documentService.uploadProfileImage(
+          updateData.profileImage,
+          caId,
+          "ca",
+        );
+        filteredData.profileImage = s3Url;
+      } else if (
+        updateData.image &&
+        updateData.image.startsWith("data:image/")
+      ) {
+        const s3Url = await documentService.uploadProfileImage(
+          updateData.image,
+          caId,
+          "ca",
+        );
+        filteredData.profileImage = s3Url;
+      } else if (updateData.profileImage !== undefined) {
+        filteredData.profileImage = updateData.profileImage;
+      } else if (updateData.image !== undefined) {
+        filteredData.profileImage = updateData.image;
+      }
 
       await ca.update(filteredData);
 

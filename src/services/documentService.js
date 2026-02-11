@@ -655,8 +655,7 @@ class DocumentService {
   async clearUserDocumentsCache(userId) {
     // No-op - cache removed
   }
-
-  /**
+  /*
    * Get multer upload middleware
    */
   getUploadMiddleware() {
@@ -668,6 +667,50 @@ class DocumentService {
    */
   getMultipleUploadMiddleware() {
     return upload.array("documents", 10); // Max 10 files
+  }
+
+  /**
+   * Upload profile image from Base64 to S3
+   */
+  async uploadProfileImage(base64Data, userId, userType) {
+    try {
+      // Check if it's already a URL (to avoid re-uploading if already on S3)
+      if (
+        typeof base64Data === "string" &&
+        (base64Data.startsWith("http") || base64Data.startsWith("https"))
+      ) {
+        return base64Data;
+      }
+
+      // Base64 format: data:image/[type];base64,[data]
+      const matches = base64Data.match(
+        /^data:image\/([a-zA-Z+]+);base64,(.+)$/,
+      );
+      if (!matches || matches.length !== 3) {
+        throw new Error("Invalid base64 image data");
+      }
+
+      const fileExtension = matches[1];
+      const imageBuffer = Buffer.from(matches[2], "base64");
+      const contentType = `image/${fileExtension}`;
+
+      // Generate unique filename in profile_images folder
+      const fileName = `profile_images/${userType}/${userId}_${Date.now()}.${fileExtension}`;
+
+      // Upload to S3
+      const uploadParams = {
+        Bucket: BUCKET_NAME,
+        Key: fileName,
+        Body: imageBuffer,
+        ContentType: contentType,
+      };
+
+      const result = await s3.upload(uploadParams).promise();
+      return result.Location;
+    } catch (error) {
+      logger.error("Error uploading profile image:", error);
+      throw error;
+    }
   }
 }
 
