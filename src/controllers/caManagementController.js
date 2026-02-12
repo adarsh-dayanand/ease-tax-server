@@ -38,7 +38,7 @@ class CAManagementController {
         caId,
         status,
         parseInt(page),
-        parseInt(limit)
+        parseInt(limit),
       );
 
       res.json({
@@ -79,7 +79,7 @@ class CAManagementController {
 
       const request = await caManagementService.getRequestDetails(
         requestId,
-        caId
+        caId,
       );
 
       if (!request) {
@@ -137,7 +137,10 @@ class CAManagementController {
       await notificationService.notifyConsultationAccepted(
         result.userId,
         requestId,
-        { name: req.user.name }
+        {
+          name: req.user.name,
+          email: req.user.email,
+        },
       );
 
       res.json({
@@ -174,11 +177,11 @@ class CAManagementController {
       const result = await caManagementService.rejectRequest(
         requestId,
         caId,
-        reason
+        reason,
       );
 
       // Send notification to user
-      await notificationService.createNotification(
+      await notificationService.createMultiChannelNotification(
         result.userId,
         "user",
         "consultation_rejected",
@@ -187,8 +190,13 @@ class CAManagementController {
         {
           serviceRequestId: requestId,
           priority: "high",
-          templateData: { caName: req.user.name, reason },
-        }
+          sendEmail: true,
+          templateData: {
+            caName: req.user.name,
+            reason,
+            serviceRequestId: requestId,
+          },
+        },
       );
 
       res.json({
@@ -215,11 +223,7 @@ class CAManagementController {
       const caId = req.user.id;
       const { status, notes } = req.body;
 
-      const validStatuses = [
-        "in_progress",
-        "completed",
-        "cancelled"
-      ];
+      const validStatuses = ["in_progress", "completed", "cancelled"];
 
       if (!validStatuses.includes(status)) {
         return res.status(400).json({
@@ -232,11 +236,11 @@ class CAManagementController {
         requestId,
         caId,
         status,
-        notes
+        notes,
       );
 
       // Send notification to user about status change (only for completed status)
-      if (status === 'completed') {
+      if (status === "completed") {
         await notificationService.createNotification(
           result.userId,
           "user",
@@ -249,7 +253,7 @@ class CAManagementController {
             actionText: "View Details",
             priority: "medium",
             templateData: { status, notes },
-          }
+          },
         );
       }
 
@@ -283,23 +287,15 @@ class CAManagementController {
         {
           completionNotes,
           deliverables,
-        }
+        },
       );
 
       // Send notification to user
-      await notificationService.createNotification(
+      await notificationService.notifyConsultationCompleted(
         result.userId,
-        "user",
-        "consultation_completed",
-        "Service Completed",
-        `Your service has been completed by CA ${req.user.name}. Please make the final payment to access your documents.`,
-        {
-          serviceRequestId: requestId,
-          actionUrl: `/consultations/${requestId}/payment`,
-          actionText: "Make Payment",
-          priority: "high",
-          templateData: { caName: req.user.name, completionNotes },
-        }
+        requestId,
+        { name: req.user.name },
+        completionNotes,
       );
 
       res.json({
@@ -349,7 +345,7 @@ class CAManagementController {
 
       const profile = await caManagementService.updateCAProfile(
         caId,
-        updateData
+        updateData,
       );
 
       res.json({
@@ -391,7 +387,7 @@ class CAManagementController {
           duration,
           meetingType: meetingType || "google_meet",
           agenda,
-        }
+        },
       );
 
       // Send notification to user
@@ -400,6 +396,7 @@ class CAManagementController {
         serviceRequestId: requestId,
         scheduledDateTime,
         meetingUrl: meeting.meetingUrl,
+        otherPartyName: req.user.name, // CA name
       });
 
       res.json({
@@ -439,7 +436,7 @@ class CAManagementController {
         {
           newScheduledDateTime,
           reason,
-        }
+        },
       );
 
       // Send notification to user
@@ -459,7 +456,7 @@ class CAManagementController {
             reason,
             meetingUrl: meeting.meetingUrl,
           },
-        }
+        },
       );
 
       res.json({
@@ -496,24 +493,37 @@ class CAManagementController {
       const document = await documentService.uploadITRVDocument(
         req.file,
         requestId,
-        caId
+        caId,
       );
 
       // Send notification to user
-      await notificationService.createNotification(
-        req.user.id, // This should be the user ID, need to get from service request
-        "user",
-        "document_uploaded",
-        "ITR-V Ready for Download",
-        "Your ITR-V document is ready. Please complete the final payment to download.",
-        {
-          serviceRequestId: requestId,
-          actionUrl: `/consultations/${requestId}/payment`,
-          actionText: "Make Payment",
-          priority: "high",
-          templateData: { documentName: document.name },
-        }
-      );
+      const serviceRequest =
+        await require("../services/caManagementService").getRequestDetails(
+          requestId,
+          caId,
+        );
+      if (serviceRequest && serviceRequest.userId) {
+        await notificationService.createMultiChannelNotification(
+          serviceRequest.userId,
+          "user",
+          "document_uploaded",
+          "ITR-V Ready for Download",
+          "Your ITR-V document is ready. Please complete the final payment to download.",
+          {
+            serviceRequestId: requestId,
+            actionUrl: `/consultations/${requestId}/payment`,
+            actionText: "Make Payment",
+            priority: "high",
+            sendEmail: true,
+            templateData: {
+              documentName: document.name,
+              uploaderName: req.user.name,
+              uploaderType: "ca",
+              serviceRequestId: requestId,
+            },
+          },
+        );
+      }
 
       res.status(201).json({
         success: true,

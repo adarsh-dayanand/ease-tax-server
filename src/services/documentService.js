@@ -184,13 +184,17 @@ class DocumentService {
         documentType,
       );
 
-      // Send real-time notification to the other party
-      const notificationService = require("./notificationService");
-      const recipientId =
-        consultation.userId === userId
-          ? consultation.caId
-          : consultation.userId;
-      const recipientType = consultation.userId === userId ? "ca" : "user";
+      // Determine uploader name
+      const User = require("../../models").User;
+      const CA = require("../../models").CA;
+      let uploaderName = "Someone";
+      if (uploaderType === "user") {
+        const uploader = await User.findByPk(userId);
+        uploaderName = uploader?.name || "Client";
+      } else {
+        const uploader = await CA.findByPk(userId);
+        uploaderName = uploader?.name || "CA";
+      }
 
       await notificationService.notifyDocumentUploaded(
         recipientId,
@@ -199,6 +203,8 @@ class DocumentService {
           id: document.id,
           name: document.name,
           serviceRequestId: consultationId,
+          uploaderName,
+          uploaderType,
         },
       );
 

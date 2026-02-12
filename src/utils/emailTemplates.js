@@ -138,7 +138,12 @@ const createButton = (text, url) => `
  * Template: Consultation Requested (for CA)
  */
 const consultationRequestedTemplate = (data) => {
-  const { userName, userEmail, purpose, serviceRequestId } = data;
+  const {
+    userName = "Client",
+    userEmail = "",
+    purpose = "",
+    serviceRequestId,
+  } = data;
   const actionUrl = `${FRONTEND_URL}/ca/consultations/${serviceRequestId}`;
 
   const content = `
@@ -173,7 +178,7 @@ const consultationRequestedTemplate = (data) => {
  * Template: Consultation Accepted (for User)
  */
 const consultationAcceptedTemplate = (data) => {
-  const { caName, caEmail, serviceRequestId } = data;
+  const { caName = "Your CA", caEmail = "", serviceRequestId } = data;
   const actionUrl = `${FRONTEND_URL}/consultations/${serviceRequestId}`;
 
   const content = `
@@ -207,7 +212,7 @@ const consultationAcceptedTemplate = (data) => {
  * Template: Consultation Rejected (for User)
  */
 const consultationRejectedTemplate = (data) => {
-  const { caName, reason, serviceRequestId } = data;
+  const { caName = "Your CA", reason, serviceRequestId } = data;
   const actionUrl = `${FRONTEND_URL}/consultations/${serviceRequestId}`;
 
   const content = `
@@ -240,10 +245,52 @@ const consultationRejectedTemplate = (data) => {
 };
 
 /**
+ * Template: Consultation Completed (for User)
+ */
+const consultationCompletedTemplate = (data) => {
+  const { caName = "Your CA", completionNotes, serviceRequestId } = data;
+  const actionUrl = `${FRONTEND_URL}/consultations/${serviceRequestId}/payment`;
+
+  const content = `
+    <div class="content">
+      <p class="greeting">Service Completed!</p>
+      <p class="message">
+        Your service has been completed by <strong>${caName}</strong>. 
+      </p>
+      ${
+        completionNotes
+          ? `
+      <div class="info-box">
+        <p style="margin: 5px 0;"><strong>CA Notes:</strong> ${completionNotes}</p>
+      </div>
+      `
+          : ""
+      }
+      <p class="message">
+        Please complete the final payment to access your finalized documents and reports.
+      </p>
+      ${createButton("Make Final Payment", actionUrl)}
+    </div>
+  `;
+
+  return {
+    subject: `Service Completed by ${caName}`,
+    html: baseTemplate(content, `Your service has been completed by ${caName}`),
+    text: `Your service has been completed by ${caName}. Please complete the final payment: ${actionUrl}`,
+  };
+};
+
+/**
  * Template: Payment Successful (for User)
  */
 const paymentSuccessfulTemplate = (data) => {
-  const { amount, orderId, paymentId, serviceRequestId, serviceName } = data;
+  const {
+    amount = "0",
+    orderId = "N/A",
+    paymentId = "N/A",
+    serviceRequestId,
+    serviceName = "",
+  } = data;
   const actionUrl = `${FRONTEND_URL}/payments/${paymentId}`;
 
   const content = `
@@ -276,7 +323,12 @@ const paymentSuccessfulTemplate = (data) => {
  * Template: Payment Failed (for User)
  */
 const paymentFailedTemplate = (data) => {
-  const { amount, orderId, reason, serviceRequestId } = data;
+  const {
+    amount = "0",
+    orderId = "N/A",
+    reason = "Unknown reason",
+    serviceRequestId,
+  } = data;
   const actionUrl = `${FRONTEND_URL}/consultations/${serviceRequestId}`;
 
   const content = `
@@ -308,7 +360,12 @@ const paymentFailedTemplate = (data) => {
  * Template: Document Uploaded
  */
 const documentUploadedTemplate = (data) => {
-  const { documentName, uploaderName, uploaderType, serviceRequestId } = data;
+  const {
+    documentName = "Document",
+    uploaderName = "Someone",
+    uploaderType = "user",
+    serviceRequestId,
+  } = data;
   const actionUrl = `${FRONTEND_URL}/consultations/${serviceRequestId}`;
 
   const content = `
@@ -333,11 +390,87 @@ const documentUploadedTemplate = (data) => {
 };
 
 /**
+ * Template: Document Verified
+ */
+const documentVerifiedTemplate = (data) => {
+  const {
+    documentName = "Document",
+    caName = "Your CA",
+    serviceRequestId,
+  } = data;
+  const actionUrl = `${FRONTEND_URL}/consultations/${serviceRequestId}/documents`;
+
+  const content = `
+    <div class="content">
+      <p class="greeting">Document Verified</p>
+      <p class="message">
+        Your document <strong>${documentName}</strong> has been successfully verified by <strong>${caName}</strong>.
+      </p>
+      ${createButton("View Documents", actionUrl)}
+    </div>
+  `;
+
+  return {
+    subject: `Document Verified: ${documentName}`,
+    html: baseTemplate(
+      content,
+      `Your document ${documentName} has been verified`,
+    ),
+    text: `Your document ${documentName} has been verified by ${caName}. View: ${actionUrl}`,
+  };
+};
+
+/**
+ * Template: Document Rejected
+ */
+const documentRejectedTemplate = (data) => {
+  const {
+    documentName = "Document",
+    caName = "Your CA",
+    rejectionReason,
+    serviceRequestId,
+  } = data;
+  const actionUrl = `${FRONTEND_URL}/consultations/${serviceRequestId}/documents`;
+
+  const content = `
+    <div class="content">
+      <p class="greeting">Document Rejected</p>
+      <p class="message">
+        Unfortunately, your document <strong>${documentName}</strong> was rejected by <strong>${caName}</strong>.
+      </p>
+      ${
+        rejectionReason
+          ? `
+      <div class="info-box">
+        <p style="margin: 5px 0;"><strong>Reason:</strong> ${rejectionReason}</p>
+      </div>
+      `
+          : ""
+      }
+      <p class="message">
+        Please review the reason and upload a correct version of the document.
+      </p>
+      ${createButton("Upload Correct Document", actionUrl)}
+    </div>
+  `;
+
+  return {
+    subject: `Document Rejected: ${documentName}`,
+    html: baseTemplate(content, `Your document ${documentName} was rejected`),
+    text: `Your document ${documentName} was rejected by ${caName}.${rejectionReason ? ` Reason: ${rejectionReason}` : ""} View: ${actionUrl}`,
+  };
+};
+
+/**
  * Template: Meeting Scheduled
  */
 const meetingScheduledTemplate = (data) => {
-  const { scheduledDateTime, meetingUrl, otherPartyName, serviceRequestId } =
-    data;
+  const {
+    scheduledDateTime = "TBD",
+    meetingUrl = "",
+    otherPartyName = "Your Consultant",
+    serviceRequestId,
+  } = data;
   const actionUrl =
     meetingUrl || `${FRONTEND_URL}/consultations/${serviceRequestId}`;
 
@@ -365,6 +498,48 @@ const meetingScheduledTemplate = (data) => {
       `Meeting scheduled with ${otherPartyName} on ${scheduledDateTime}`,
     ),
     text: `Meeting scheduled with ${otherPartyName} on ${scheduledDateTime}. Join: ${actionUrl}`,
+  };
+};
+
+/**
+ * Template: Meeting Rescheduled
+ */
+const meetingRescheduledTemplate = (data) => {
+  const {
+    newDateTime = "TBD",
+    meetingUrl = "",
+    reason,
+    serviceRequestId,
+  } = data;
+  const actionUrl =
+    meetingUrl || `${FRONTEND_URL}/consultations/${serviceRequestId}`;
+
+  const content = `
+    <div class="content">
+      <p class="greeting">Meeting Rescheduled</p>
+      <p class="message">
+        Your consultation meeting has been rescheduled to <strong>${newDateTime}</strong>.
+      </p>
+      ${
+        reason
+          ? `
+      <div class="info-box">
+        <p style="margin: 5px 0;"><strong>Reason:</strong> ${reason}</p>
+      </div>
+      `
+          : ""
+      }
+      <p class="message">
+        Please update your calendar accordingly.
+      </p>
+      ${createButton("View Meeting Details", actionUrl)}
+    </div>
+  `;
+
+  return {
+    subject: `Meeting Rescheduled - ${newDateTime}`,
+    html: baseTemplate(content, `Meeting rescheduled to ${newDateTime}`),
+    text: `Your meeting has been rescheduled to ${newDateTime}.${reason ? ` Reason: ${reason}` : ""} View: ${actionUrl}`,
   };
 };
 
@@ -435,10 +610,14 @@ const getTemplate = (templateName, data) => {
     consultation_requested: consultationRequestedTemplate,
     consultation_accepted: consultationAcceptedTemplate,
     consultation_rejected: consultationRejectedTemplate,
+    consultation_completed: consultationCompletedTemplate,
     payment_successful: paymentSuccessfulTemplate,
     payment_failed: paymentFailedTemplate,
     document_uploaded: documentUploadedTemplate,
+    document_verified: documentVerifiedTemplate,
+    document_rejected: documentRejectedTemplate,
     meeting_scheduled: meetingScheduledTemplate,
+    meeting_rescheduled: meetingRescheduledTemplate,
     meeting_reminder: meetingReminderTemplate,
     deadline_reminder: deadlineReminderTemplate,
   };

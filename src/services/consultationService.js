@@ -55,10 +55,15 @@ class ConsultationService {
 
       // Notify the CA about the new request
       const notificationService = require("./notificationService");
+      const user = await User.findByPk(userId);
       await notificationService.notifyConsultationRequested(
         caService.caId,
         consultation.id,
-        { name: "User" },
+        {
+          name: user ? user.name : "Client",
+          email: user ? user.email : "",
+          purpose: purpose || "",
+        },
       );
 
       return await this.getConsultationDetails(consultation.id);

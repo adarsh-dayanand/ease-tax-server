@@ -415,13 +415,25 @@ class NotificationService {
   /**
    * Helper methods for common notification types
    */
-  async notifyConsultationRequested(caId, serviceRequestId, userInfo) {
+  async notifyConsultationRequested(caId, serviceRequestId, userInfo = {}) {
+    // Ensure we have user name and email
+    if (!userInfo.name || !userInfo.email) {
+      const serviceRequest = await ServiceRequest.findByPk(serviceRequestId, {
+        include: [{ model: User, as: "user", attributes: ["name", "email"] }],
+      });
+      if (serviceRequest && serviceRequest.user) {
+        userInfo.name = serviceRequest.user.name;
+        userInfo.email = serviceRequest.user.email;
+        userInfo.purpose = serviceRequest.purpose;
+      }
+    }
+
     return await this.createMultiChannelNotification(
       caId,
       "ca",
       "consultation_requested",
       "New Consultation Request",
-      `${userInfo.name} has requested a consultation`,
+      `${userInfo.name || "A client"} has requested a consultation`,
       {
         serviceRequestId,
         actionUrl: `/ca/consultations/${serviceRequestId}`,
@@ -439,13 +451,24 @@ class NotificationService {
     );
   }
 
-  async notifyConsultationAccepted(userId, serviceRequestId, caInfo) {
+  async notifyConsultationAccepted(userId, serviceRequestId, caInfo = {}) {
+    // Ensure we have CA name and email
+    if (!caInfo.name || !caInfo.email) {
+      const serviceRequest = await ServiceRequest.findByPk(serviceRequestId, {
+        include: [{ model: CA, as: "ca", attributes: ["name", "email"] }],
+      });
+      if (serviceRequest && serviceRequest.ca) {
+        caInfo.name = serviceRequest.ca.name;
+        caInfo.email = serviceRequest.ca.email;
+      }
+    }
+
     return await this.createMultiChannelNotification(
       userId,
       "user",
       "consultation_accepted",
       "Consultation Accepted",
-      `CA ${caInfo.name} has accepted your consultation request`,
+      `CA ${caInfo.name || "Assigned"} has accepted your consultation request`,
       {
         serviceRequestId,
         actionUrl: `/consultations/${serviceRequestId}`,
@@ -488,6 +511,21 @@ class NotificationService {
   }
 
   async notifyDocumentUploaded(recipientId, recipientType, documentInfo) {
+    // Fetch uploader name if not provided
+    if (!documentInfo.uploaderName) {
+      const { Document } = require("../../models");
+      const doc = await Document.findByPk(documentInfo.id, {
+        include: [
+          { model: User, as: "user", attributes: ["name"], required: false },
+          { model: CA, as: "ca", attributes: ["name"], required: false },
+        ],
+      });
+      if (doc) {
+        documentInfo.uploaderName = doc.user?.name || doc.ca?.name || "Someone";
+        documentInfo.uploaderType = doc.uploaderType;
+      }
+    }
+
     return await this.createMultiChannelNotification(
       recipientId,
       recipientType,
@@ -512,6 +550,25 @@ class NotificationService {
   }
 
   async notifyMeetingScheduled(recipientId, recipientType, meetingInfo) {
+    // Fetch other party name if not provided
+    if (!meetingInfo.otherPartyName) {
+      const { Meeting } = require("../../models");
+      const meeting = await Meeting.findByPk(meetingInfo.id, {
+        include: [
+          { model: User, as: "user", attributes: ["name"], required: false },
+          { model: CA, as: "ca", attributes: ["name"], required: false },
+        ],
+      });
+
+      if (meeting) {
+        if (recipientType === "user") {
+          meetingInfo.otherPartyName = meeting.ca?.name || "Your CA";
+        } else {
+          meetingInfo.otherPartyName = meeting.user?.name || "Client";
+        }
+      }
+    }
+
     return await this.createMultiChannelNotification(
       recipientId,
       recipientType,
@@ -530,6 +587,43 @@ class NotificationService {
           meetingUrl: meetingInfo.meetingUrl,
           otherPartyName: meetingInfo.otherPartyName,
           serviceRequestId: meetingInfo.serviceRequestId,
+        },
+      },
+    );
+  }
+
+  async notifyConsultationCompleted(
+    userId,
+    serviceRequestId,
+    caInfo = {},
+    completionNotes = "",
+  ) {
+    if (!caInfo.name) {
+      const serviceRequest = await ServiceRequest.findByPk(serviceRequestId, {
+        include: [{ model: CA, as: "ca", attributes: ["name"] }],
+      });
+      if (serviceRequest && serviceRequest.ca) {
+        caInfo.name = serviceRequest.ca.name;
+      }
+    }
+
+    return await this.createMultiChannelNotification(
+      userId,
+      "user",
+      "consultation_completed",
+      "Service Completed",
+      `Your service has been completed by CA ${caInfo.name || "Assigned"}.`,
+      {
+        serviceRequestId,
+        actionUrl: `/consultations/${serviceRequestId}/payment`,
+        actionText: "Make Final Payment",
+        priority: "high",
+        sendEmail: true,
+        sendInApp: true,
+        templateData: {
+          caName: caInfo.name,
+          completionNotes,
+          serviceRequestId,
         },
       },
     );
