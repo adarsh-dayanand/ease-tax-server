@@ -12,7 +12,14 @@ router.get(
   rateLimit.apiRateLimit,
   securityHeaders,
   sanitizeInput,
-  caController.getPopularCAs
+  caController.getPopularCAs,
+);
+router.post(
+  "/inquiry",
+  rateLimit.apiRateLimit,
+  securityHeaders,
+  sanitizeInput,
+  caController.submitCAInquiry,
 );
 
 // CA services pricing (public routes)
@@ -21,7 +28,7 @@ router.get(
   rateLimit.apiRateLimit,
   securityHeaders,
   sanitizeInput,
-  caServiceController.getPublicServices
+  caServiceController.getPublicServices,
 );
 
 // Apply authentication to remaining routes
@@ -34,7 +41,7 @@ router.use(sanitizeInput);
 router.post(
   "/:caId/services",
   rateLimit.apiRateLimit,
-  caServiceController.createServiceForCA
+  caServiceController.createServiceForCA,
 );
 
 // CA search and listing
@@ -46,7 +53,7 @@ router.get("/:caId/reviews", rateLimit.apiRateLimit, caController.getCAReviews);
 router.post(
   "/:caId/reviews",
   rateLimit.apiRateLimit,
-  caController.submitReview
+  caController.submitReview,
 );
 // Availability endpoints removed - CAs handle time slots through consultation requests
 
@@ -54,7 +61,7 @@ router.post(
 router.delete(
   "/:caId/cache",
   rateLimit.strictRateLimit,
-  caController.clearCACache
+  caController.clearCACache,
 );
 
 module.exports = router;

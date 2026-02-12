@@ -22,9 +22,10 @@ class EmailService {
    * @param {string} subject - Email subject
    * @param {string} html - HTML content
    * @param {string} text - Plain text content (optional)
+   * @param {string|Array<string>} cc - CC email address(es) (optional)
    * @returns {Promise<Object>} - Resend response with message ID
    */
-  async sendEmail(to, subject, html, text = null) {
+  async sendEmail(to, subject, html, text = null, cc = null) {
     try {
       if (!this.resend) {
         throw new Error(
@@ -38,6 +39,10 @@ class EmailService {
         subject,
         html,
       };
+
+      if (cc) {
+        emailData.cc = cc;
+      }
 
       if (text) {
         emailData.text = text;
@@ -67,9 +72,10 @@ class EmailService {
    * @param {string} to - Recipient email address
    * @param {string} templateName - Template name
    * @param {Object} templateData - Data to populate template
+   * @param {string|Array<string>} cc - CC email address(es) (optional)
    * @returns {Promise<Object>} - Resend response
    */
-  async sendTemplateEmail(to, templateName, templateData) {
+  async sendTemplateEmail(to, templateName, templateData, cc = null) {
     try {
       const emailTemplates = require("../utils/emailTemplates");
 
@@ -84,6 +90,7 @@ class EmailService {
         template.subject,
         template.html,
         template.text,
+        cc,
       );
     } catch (error) {
       logger.error(

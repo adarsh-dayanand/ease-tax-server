@@ -603,6 +603,51 @@ const deadlineReminderTemplate = (data) => {
 };
 
 /**
+ * Template: CA/Tax Consultant Inquiry (from Pricing page)
+ */
+const caInquiryTemplate = (data) => {
+  const {
+    name = "N/A",
+    email = "N/A",
+    phone = "N/A",
+    caNumber = "N/A",
+    experience = "N/A",
+    specialization = "N/A",
+    message = "N/A",
+  } = data;
+
+  const content = `
+    <div class="content">
+      <p class="greeting">New CA/Consultant Inquiry</p>
+      <p class="message">
+        A new professional has expressed interest in joining EaseTax via the Pricing page form.
+      </p>
+      <div class="info-box">
+        <p style="margin: 5px 0;"><strong>Name:</strong> ${name}</p>
+        <p style="margin: 5px 0;"><strong>Email:</strong> ${email}</p>
+        <p style="margin: 5px 0;"><strong>Phone:</strong> ${phone}</p>
+        <p style="margin: 5px 0;"><strong>CA Number:</strong> ${caNumber || "N/A"}</p>
+        <p style="margin: 5px 0;"><strong>Experience:</strong> ${experience} years</p>
+        <p style="margin: 5px 0;"><strong>Specialization:</strong> ${specialization || "N/A"}</p>
+      </div>
+      <div class="info-box" style="background-color: #f0f7ff; border-left-color: #007bff;">
+        <p style="margin: 5px 0;"><strong>Motivation/Message:</strong></p>
+        <p style="margin: 5px 0; font-style: italic;">${message || "No message provided."}</p>
+      </div>
+      <p class="message">
+        Please follow up with the applicant within 2-3 business days.
+      </p>
+    </div>
+  `;
+
+  return {
+    subject: `New CA Application from ${name}`,
+    html: baseTemplate(content, `New CA inquiry from ${name}`),
+    text: `New CA application from ${name}. Email: ${email}, Phone: ${phone}, Exp: ${experience}y. Message: ${message}`,
+  };
+};
+
+/**
  * Get template by name
  */
 const getTemplate = (templateName, data) => {
@@ -620,6 +665,7 @@ const getTemplate = (templateName, data) => {
     meeting_rescheduled: meetingRescheduledTemplate,
     meeting_reminder: meetingReminderTemplate,
     deadline_reminder: deadlineReminderTemplate,
+    ca_inquiry: caInquiryTemplate,
   };
 
   const templateFunction = templates[templateName];

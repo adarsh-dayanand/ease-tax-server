@@ -30,13 +30,13 @@ class CAController {
 
       // Remove undefined values
       Object.keys(filters).forEach(
-        (key) => filters[key] === undefined && delete filters[key]
+        (key) => filters[key] === undefined && delete filters[key],
       );
 
       const result = await caService.searchCAs(
         filters,
         parseInt(page),
-        parseInt(limit)
+        parseInt(limit),
       );
 
       res.json({
@@ -96,7 +96,7 @@ class CAController {
       const reviews = await caService.getCAReviews(
         caId,
         parseInt(page),
-        parseInt(limit)
+        parseInt(limit),
       );
 
       res.json({
@@ -143,7 +143,7 @@ class CAController {
         caId,
         serviceRequestId,
         rating,
-        comment || null
+        comment || null,
       );
 
       res.json({
@@ -210,6 +210,63 @@ class CAController {
       res.status(500).json({
         success: false,
         message: "Internal server error",
+      });
+    }
+  }
+
+  /**
+   * Submit CA inquiry from Pricing page
+   * POST /ca/inquiry
+   */
+  async submitCAInquiry(req, res) {
+    try {
+      const {
+        name,
+        email,
+        phone,
+        caNumber,
+        experience,
+        specialization,
+        message,
+      } = req.body;
+
+      // Basic validation
+      if (!name || !email || !phone || !experience) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Please provide all required fields (name, email, phone, experience)",
+        });
+      }
+
+      const emailService = require("../services/emailService");
+
+      // Send email to admin and CC the user
+      await emailService.sendTemplateEmail(
+        "shreepoornaadarshasrivatsa@gmail.com",
+        "ca_inquiry",
+        {
+          name,
+          email,
+          phone,
+          caNumber,
+          experience,
+          specialization,
+          message,
+        },
+        email, // CC the user
+      );
+
+      res.json({
+        success: true,
+        message:
+          "Your application has been submitted successfully. We will get back to you soon.",
+      });
+    } catch (error) {
+      logger.error("Error in submitCAInquiry:", error);
+      res.status(500).json({
+        success: false,
+        message: "Failed to submit application. Please try again later.",
       });
     }
   }
