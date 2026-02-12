@@ -165,7 +165,7 @@ class CAManagementService {
         totalCommission += commission;
         totalEarnings += netAmount;
 
-        logger.debug("Earnings calculation", {
+        logger.info("Earnings calculation", {
           paymentId: payment.id,
           type: payment.paymentType,
           amountWithGst,
