@@ -13,49 +13,144 @@ const { Op, QueryTypes } = require("sequelize");
 
 class CAService {
   /**
+   * Helper to fetch and transform CA data for list views
+   * @private
+   */
+  async _getCAListItems(
+    whereClause = {},
+    limit = 10,
+    offset = 0,
+    order = [["experienceYears", "DESC"]],
+  ) {
+    const { rows, count } = await CA.findAndCountAll({
+      where: { ...whereClause, status: "active" },
+      include: [
+        { model: CAType, as: "caType" },
+        {
+          model: CAServiceModel,
+          as: "caServices",
+          include: [{ model: Service, as: "service" }],
+        },
+        {
+          model: Review,
+          as: "reviews",
+          attributes: ["rating"],
+        },
+        {
+          model: ServiceRequest,
+          as: "serviceRequests",
+          where: { status: "completed" },
+          attributes: ["id"],
+          required: false,
+        },
+      ],
+      limit,
+      offset,
+      order,
+      distinct: true,
+    });
+
+    const data = rows.map((ca) => {
+      const ratings = ca.reviews?.map((r) => parseFloat(r.rating)) || [];
+      const avgRating =
+        ratings.length > 0
+          ? ratings.reduce((a, b) => a + b, 0) / ratings.length
+          : 0;
+
+      const prices =
+        ca.caServices
+          ?.map((cs) => parseFloat(cs.customPrice))
+          .filter((p) => !isNaN(p)) || [];
+      const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
+
+      // Filter based on specialization if provided in whereClause (handled by include normally, but here we can be sure)
+      return {
+        id: ca.id,
+        name: ca.name,
+        image: ca.profileImage || ca.image,
+        verified: ca.status === "active",
+        specialization:
+          ca.caServices
+            ?.map((cs) => cs.service?.name)
+            .filter(Boolean)
+            .join(", ") || "Tax Consultant",
+        rating: Number(avgRating.toFixed(1)),
+        reviewCount: ratings.length,
+        location: ca.location,
+        completedFilings: ca.serviceRequests?.length || 0,
+        experience: `${ca.experienceYears} years`,
+        price:
+          minPrice > 0 ? `₹${minPrice.toLocaleString()}` : "Contact for Price",
+      };
+    });
+
+    return { data, count };
+  }
+
+  /**
    * Search and filter CAs
    */
   async searchCAs(filters = {}, page = 1, limit = 10) {
     try {
       const offset = (page - 1) * limit;
-      const whereClause = { status: "active" };
-
-      if (filters.specialization) {
-        whereClause.specialization = {
-          [Op.contains]: [filters.specialization],
-        };
-      }
+      const whereClause = {};
 
       if (filters.location) {
         whereClause.location = { [Op.iLike]: `%${filters.location}%` };
       }
 
-      const { rows, count } = await CA.findAndCountAll({
-        where: whereClause,
-        include: [{ model: CAType, as: "caType" }],
+      // Add other filters like experience range if present
+      if (filters.minExperience !== undefined) {
+        whereClause.experienceYears = { [Op.gte]: filters.minExperience };
+      }
+
+      // Sorting
+      let order = [["experienceYears", "DESC"]];
+      if (filters.sortBy === "experience") {
+        order = [["experienceYears", "DESC"]];
+      } else if (filters.sortBy === "rating") {
+        // Sorting by rating usually requires subqueries or pre-calculation,
+        // using experienceYears as fallback for now
+        order = [["experienceYears", "DESC"]];
+      }
+
+      const result = await this._getCAListItems(
+        whereClause,
         limit,
         offset,
-        order: [["experienceYears", "DESC"]],
-      });
+        order,
+      );
 
-      const transformedCAs = rows.map((ca) => ({
-        id: ca.id,
-        name: ca.name,
-        specialization: ca.specialization?.join(", ") || "Tax Consultant",
-        experience: ca.experienceYears,
-        location: ca.location,
-        image: ca.profileImage,
-        verified: ca.status === "active",
-        caType: ca.caType?.name,
-      }));
+      // Post-filtering for specialization since it's based on joined data
+      let data = result.data;
+      if (filters.specialization) {
+        data = data.filter((ca) =>
+          ca.specialization
+            .toLowerCase()
+            .includes(filters.specialization.toLowerCase()),
+        );
+      }
+
+      // Post-filtering for rating
+      if (filters.minRating) {
+        data = data.filter((ca) => ca.rating >= parseFloat(filters.minRating));
+      }
+
+      // Post-filtering for price
+      if (filters.maxPrice) {
+        data = data.filter((ca) => {
+          const priceValue = parseInt(ca.price.replace(/[^\d]/g, ""));
+          return isNaN(priceValue) || priceValue <= parseInt(filters.maxPrice);
+        });
+      }
 
       return {
-        data: transformedCAs,
+        data,
         pagination: {
           page,
           limit,
-          total: count,
-          totalPages: Math.ceil(count / limit),
+          total: result.count,
+          totalPages: Math.ceil(result.count / limit),
         },
         filters,
       };
@@ -233,13 +328,11 @@ class CAService {
    */
   async getPopularCAs(limit = 10) {
     try {
-      const cas = await CA.findAll({
-        where: { status: "active" },
-        limit,
-        order: [["experienceYears", "DESC"]],
-      });
-
-      return Promise.all(cas.map((ca) => this.getCAProfile(ca.id)));
+      // Get most experienced CAs as a proxy for "popular"
+      const result = await this._getCAListItems({}, limit, 0, [
+        ["experienceYears", "DESC"],
+      ]);
+      return result.data;
     } catch (error) {
       logger.error("Error getting popular CAs:", error);
       throw error;
