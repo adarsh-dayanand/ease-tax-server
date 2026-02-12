@@ -1,4 +1,10 @@
-const { User, ServiceRequest, Payment, Review, CA } = require("../../models");
+const {
+  User,
+  ServiceRequest,
+  Payment,
+  CA,
+  CAService,
+} = require("../../models");
 const logger = require("../config/logger");
 const { Op } = require("sequelize");
 const documentService = require("./documentService");

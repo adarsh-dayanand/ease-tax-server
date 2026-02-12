@@ -713,12 +713,6 @@ class DocumentService {
 
       // Return the proxy URL instead of direct S3 URL
       const backendUrl = process.env.BACKEND_URL || "http://localhost:3000";
-      logger.info("Profile image uploaded successfully", {
-        userType,
-        userId,
-        fileName,
-        backendUrl,
-      });
       return `${backendUrl}/api/documents/profile-image/${userType}/${fileName.split("/").pop()}`;
     } catch (error) {
       logger.error("Error uploading profile image:", error);
