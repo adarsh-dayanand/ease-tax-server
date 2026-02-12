@@ -137,6 +137,8 @@ class CAService {
           name: cs.service?.name,
           price: cs.customPrice,
           currency: cs.currency || "INR",
+          notes: cs.notes,
+          category: cs.service.category,
         })),
         reviews: reviewsResult.map((r) => ({
           id: r.id,
