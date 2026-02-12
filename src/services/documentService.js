@@ -3,6 +3,7 @@ const multer = require("multer");
 const path = require("path");
 const crypto = require("crypto");
 const { Document } = require("../../models");
+const { Op } = require("sequelize");
 const logger = require("../config/logger");
 
 // Configure AWS S3
@@ -593,7 +594,6 @@ class DocumentService {
    */
   async getUserDocuments(userId, page = 1, limit = 10, documentType = null) {
     try {
-      const { Op } = require("sequelize");
       const ServiceRequest = require("../../models").ServiceRequest;
       const offset = (page - 1) * limit;
 
