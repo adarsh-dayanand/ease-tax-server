@@ -66,6 +66,7 @@ const notificationRoutes = require("./routes/notifications");
 const vcRoutes = require("./routes/vc");
 const couponRoutes = require("./routes/coupons");
 const masterRoutes = require("./routes/masters");
+const inquiryRoutes = require("./routes/inquiry");
 
 // Security middleware
 app.use(securityHeaders);
@@ -108,6 +109,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/vc", vcRoutes);
 app.use("/api/coupons", couponRoutes);
 app.use("/api/masters", masterRoutes);
+app.use("/api/inquiry", inquiryRoutes);
 
 // Health check
 const healthCheck = (req, res) => {

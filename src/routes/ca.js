@@ -14,13 +14,6 @@ router.get(
   sanitizeInput,
   caController.getPopularCAs,
 );
-router.post(
-  "/inquiry",
-  rateLimit.apiRateLimit,
-  securityHeaders,
-  sanitizeInput,
-  caController.submitCAInquiry,
-);
 
 // CA services pricing (public routes)
 router.get(
