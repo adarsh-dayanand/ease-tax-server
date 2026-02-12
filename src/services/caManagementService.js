@@ -140,76 +140,40 @@ class CAManagementService {
 
       let totalGrossEarnings = 0;
       let totalCommission = 0;
+      let totalEarnings = 0;
 
       logger.info(
         `[Dashboard] Processing ${paymentsForEarnings.length} payments for CA: ${caId}`,
       );
 
-      const totalEarnings = paymentsForEarnings.reduce((sum, payment) => {
-        const amount = parseFloat(payment.amount) || 0;
-        const storedCommission = parseFloat(payment.commissionAmount) || 0;
+      paymentsForEarnings.forEach((payment) => {
+        const amountWithGst = parseFloat(payment.amount) || 0;
+        const baseAmount = amountWithGst / 1.18; // Exclude 18% GST
 
-        // Extract service price (totalAmount) from metadata
-        let servicePrice = null;
-        if (payment.metadata) {
-          try {
-            const metadata =
-              typeof payment.metadata === "string"
-                ? JSON.parse(payment.metadata)
-                : payment.metadata;
-
-            if (metadata.totalAmount) {
-              servicePrice = parseFloat(metadata.totalAmount) || 0;
-            }
-          } catch (e) {
-            logger.warn("Failed to parse payment metadata", {
-              paymentId: payment.id,
-              error: e.message,
-            });
-          }
-        }
-
-        // If servicePrice not found in metadata, calculate/assign it
-        if (!servicePrice || servicePrice <= 0) {
-          if (payment.paymentType === "service_fee") {
-            const baseFinalAmount = amount / 1.18; // Remove GST to get (servicePrice - bookingFee)
-            servicePrice = baseFinalAmount + bookingFee;
-          } else if (payment.paymentType === "booking_fee") {
-            servicePrice = bookingFee;
-          } else {
-            servicePrice = amount;
-          }
-        }
-
-        // Calculate commission
+        // Use stored commission if available, else calculate from base amount
         const paymentCommissionPercentage =
           parseFloat(payment.commissionPercentage) || caCommissionPercentage;
 
-        let commission = 0;
-        if (storedCommission > 0) {
-          commission = storedCommission;
-        } else {
-          commission = (servicePrice * paymentCommissionPercentage) / 100;
+        let commission = parseFloat(payment.commissionAmount) || 0;
+        if (commission <= 0) {
+          commission = (baseAmount * paymentCommissionPercentage) / 100;
         }
 
-        const netAmount = servicePrice - commission;
+        const netAmount = baseAmount - commission;
 
-        totalGrossEarnings += servicePrice;
+        totalGrossEarnings += baseAmount;
         totalCommission += commission;
+        totalEarnings += netAmount;
 
         logger.debug("Earnings calculation", {
           paymentId: payment.id,
           type: payment.paymentType,
-          amount,
-          servicePrice,
-          storedCommission,
-          commissionPercentage: paymentCommissionPercentage,
+          amountWithGst,
+          baseAmount,
           commission,
           netAmount,
         });
-
-        return sum + (parseFloat(netAmount) || 0);
-      }, 0);
+      });
 
       logger.info(
         `[Dashboard] Earnings calculated for CA: ${caId} (${Date.now() - earningsStartTime}ms)`,
