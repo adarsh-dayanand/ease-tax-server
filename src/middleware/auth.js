@@ -32,10 +32,18 @@ const authenticateToken = async (req, res, next) => {
 
     if (firebaseResult.success) {
       const { uid, email } = firebaseResult.data;
+      // Only trust email-based account linking when Firebase has actually
+      // verified the email. Otherwise, someone can self-register a Firebase
+      // account with an unverified copy of another person's email and get
+      // matched to that person's (or an admin's) existing account.
+      const emailVerified = firebaseResult.data.email_verified === true;
+      const emailClause =
+        email && emailVerified ? { email: email.toLowerCase().trim() } : null;
 
       logger.info("Authenticating user with Firebase token", {
         uid,
         email,
+        emailVerified,
       });
 
       // Sequential checks to avoid overloading DB with 3 queries per request
@@ -45,7 +53,7 @@ const authenticateToken = async (req, res, next) => {
           [require("sequelize").Op.or]: [
             { googleUid: uid },
             { phoneUid: uid },
-            email ? { email: email.toLowerCase().trim() } : null,
+            emailClause,
           ].filter(Boolean),
         },
       });
@@ -59,7 +67,7 @@ const authenticateToken = async (req, res, next) => {
             [require("sequelize").Op.or]: [
               { googleUid: uid },
               { phoneUid: uid },
-              email ? { email: email.toLowerCase().trim() } : null,
+              emailClause,
             ].filter(Boolean),
           },
         });
@@ -72,7 +80,7 @@ const authenticateToken = async (req, res, next) => {
             where: {
               [require("sequelize").Op.or]: [
                 { googleUid: uid },
-                email ? { email: email.toLowerCase().trim() } : null,
+                emailClause,
               ].filter(Boolean),
             },
           });
@@ -121,6 +129,16 @@ const authenticateToken = async (req, res, next) => {
             },
           });
         }
+
+        if (userType === "user" && user.status !== "active") {
+          return res.status(401).json({
+            success: false,
+            error: {
+              code: CONSTANTS.ERROR_CODES.AUTH_UNAUTHORIZED,
+              message: "This account has been suspended. Please contact support.",
+            },
+          });
+        }
       } else {
         // Auto-create only for regular users if email exists
         if (email) {
@@ -159,7 +177,7 @@ const authenticateToken = async (req, res, next) => {
         name: user.name,
         type: userType,
         firebaseUid: uid,
-        emailVerified: true,
+        emailVerified,
       };
 
       return next();
@@ -389,10 +407,14 @@ const optionalAuth = async (req, res, next) => {
 
     if (firebaseResult.success) {
       const { uid, email } = firebaseResult.data;
+      const emailVerified = firebaseResult.data.email_verified === true;
+      const emailClause =
+        email && emailVerified ? { email: email.toLowerCase().trim() } : null;
 
       logger.info("Authenticating user with Firebase token (optional)", {
         uid,
         email,
+        emailVerified,
       });
 
       // Sequential checks
@@ -401,12 +423,13 @@ const optionalAuth = async (req, res, next) => {
           [require("sequelize").Op.or]: [
             { googleUid: uid },
             { phoneUid: uid },
-            email ? { email: email.toLowerCase().trim() } : null,
+            emailClause,
           ].filter(Boolean),
         },
       });
 
       let userType = "user";
+      if (user && user.status !== "active") user = null;
 
       if (!user) {
         user = await CA.findOne({
@@ -414,14 +437,14 @@ const optionalAuth = async (req, res, next) => {
             [require("sequelize").Op.or]: [
               { googleUid: uid },
               { phoneUid: uid },
-              email ? { email: email.toLowerCase().trim() } : null,
+              emailClause,
             ].filter(Boolean),
           },
         });
 
         if (user) {
           userType = "ca";
-          if (user.status === "suspended") user = null;
+          if (user.status !== "active") user = null;
         }
       }
 

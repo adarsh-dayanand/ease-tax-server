@@ -1,4 +1,4 @@
-const { Payment, ServiceRequest, User, CA } = require("../../models");
+const { Payment, ServiceRequest, User, CA, sequelize } = require("../../models");
 const { Op } = require("sequelize");
 const couponService = require("./couponService");
 const logger = require("../config/logger");
@@ -45,6 +45,17 @@ class PaymentService {
             model: CA,
             as: "ca",
             attributes: ["id", "name", "commissionPercentage"],
+          },
+          {
+            model: require("../../models").CAService,
+            as: "caService",
+            include: [
+              {
+                model: require("../../models").Service,
+                as: "service",
+                attributes: ["id", "category"],
+              },
+            ],
           },
         ],
       });
@@ -179,7 +190,7 @@ class PaymentService {
           couponCode,
           userId,
           amount,
-          serviceRequest.serviceType,
+          serviceRequest.caService?.service?.category,
         );
 
         if (couponResult.valid) {
@@ -303,6 +314,17 @@ class PaymentService {
             as: "ca",
             attributes: ["id", "name", "commissionPercentage"],
           },
+          {
+            model: require("../../models").CAService,
+            as: "caService",
+            include: [
+              {
+                model: require("../../models").Service,
+                as: "service",
+                attributes: ["id", "category"],
+              },
+            ],
+          },
         ],
       });
 
@@ -334,12 +356,21 @@ class PaymentService {
       let servicePrice = null;
       if (serviceRequest.caServiceId) {
         const caService = await CAService.findByPk(serviceRequest.caServiceId);
-        if (caService?.customPrice) {
+        if (caService?.customPrice != null) {
           servicePrice = parseFloat(caService.customPrice);
         }
       }
 
-      const totalAmount = servicePrice || 2500; // Fallback
+      if (servicePrice === null || Number.isNaN(servicePrice)) {
+        // There is no hardcoded fallback price to fall back to (the
+        // service catalog has no base price) — silently defaulting here
+        // would charge the customer an amount the CA never configured.
+        throw new Error(
+          "This service has no price configured. Please contact support.",
+        );
+      }
+
+      const totalAmount = servicePrice;
       // Final amount: (Service amount - booking fee) + GST
       const baseFinalAmount = totalAmount - this.bookingFee;
       const finalGstAmount = baseFinalAmount * this.gstRate;
@@ -452,7 +483,7 @@ class PaymentService {
           couponCode,
           userId,
           finalAmount,
-          serviceRequest.serviceType,
+          serviceRequest.caService?.service?.category,
         );
 
         if (couponResult.valid) {
@@ -623,57 +654,97 @@ class PaymentService {
    */
   async processRefund(paymentId, userId, reason) {
     try {
-      const payment = await Payment.findByPk(paymentId, {
-        include: [
-          {
-            model: ServiceRequest,
-            as: "serviceRequest",
-          },
-        ],
-      });
+      // Lock the original payment row + create the pending refund record
+      // atomically, so two concurrent refund requests for the same payment
+      // can't both pass the "status === completed" eligibility check.
+      const { refund, refundAmount, currency, paymentGateway, gatewayId } =
+        await sequelize.transaction(async (t) => {
+          const payment = await Payment.findByPk(paymentId, {
+            include: [
+              {
+                model: ServiceRequest,
+                as: "serviceRequest",
+              },
+            ],
+            lock: t.LOCK.UPDATE,
+            transaction: t,
+          });
 
-      if (!payment) {
-        throw new Error("Payment not found");
-      }
+          if (!payment) {
+            throw new Error("Payment not found");
+          }
 
-      if (payment.payerId !== userId) {
-        throw new Error("Access denied");
-      }
+          if (payment.payerId !== userId) {
+            throw new Error("Access denied");
+          }
 
-      if (payment.status !== "completed") {
-        throw new Error("Only completed payments can be refunded");
-      }
+          // Once a payment has been refunded its status moves to
+          // "refunded" (see below), so this also blocks a second refund
+          // attempt on the same payment.
+          if (payment.status !== "completed") {
+            throw new Error("Only completed payments can be refunded");
+          }
 
-      // Check refund eligibility based on service request status
-      const refundAmount = this.calculateRefundAmount(payment);
+          const amount = this.calculateRefundAmount(payment);
 
-      if (refundAmount <= 0) {
-        throw new Error("No refund available for this payment");
-      }
+          if (amount <= 0) {
+            throw new Error("No refund available for this payment");
+          }
 
-      // Create refund record
-      const refund = await Payment.create({
-        payerId: payment.payerId,
-        payeeId: null, // Platform handles refunds
-        serviceRequestId: payment.serviceRequestId,
-        amount: refundAmount,
-        currency: payment.currency,
-        paymentType: "refund",
-        status: "pending",
-        paymentGateway: payment.paymentGateway,
-        metadata: {
-          originalPaymentId: paymentId,
-          refundReason: reason,
-          refundAmount,
-        },
-      });
+          const refundRecord = await Payment.create(
+            {
+              payerId: payment.payerId,
+              payeeId: null, // Platform handles refunds
+              serviceRequestId: payment.serviceRequestId,
+              amount,
+              currency: payment.currency,
+              paymentType: "refund",
+              status: "pending",
+              paymentGateway: payment.paymentGateway,
+              metadata: {
+                originalPaymentId: paymentId,
+                refundReason: reason,
+                refundAmount: amount,
+              },
+            },
+            { transaction: t },
+          );
+
+          // Mark the original payment refunded now, inside the same lock,
+          // so a concurrent request can never see it as still "completed".
+          await payment.update({ status: "refunded" }, { transaction: t });
+
+          return {
+            refund: refundRecord,
+            refundAmount: amount,
+            currency: payment.currency,
+            paymentGateway: payment.paymentGateway,
+            gatewayId: payment.gatewayPaymentId,
+          };
+        });
 
       let refundResponse;
 
-      if (this.mockMode) {
-        refundResponse = await this.createMockRefund(refund);
-      } else {
-        refundResponse = await this.createRazorpayRefund(payment, refundAmount);
+      try {
+        if (this.mockMode) {
+          refundResponse = await this.createMockRefund(refund);
+        } else {
+          refundResponse = await this.createRazorpayRefund(
+            { gatewayPaymentId: gatewayId, id: paymentId, metadata: refund.metadata },
+            refundAmount,
+          );
+        }
+      } catch (gatewayError) {
+        // The gateway call failed after we already committed the refund
+        // record + marked the original payment "refunded". Roll both back
+        // to "completed"/"failed" so the payment isn't stuck looking
+        // refunded when no money actually moved.
+        await Payment.update(
+          { status: "completed" },
+          { where: { id: paymentId } },
+        );
+        await refund.update({ status: "failed" });
+        throw gatewayError;
       }
 
       await refund.update({
@@ -690,7 +761,7 @@ class PaymentService {
       return {
         refundId: refund.id,
         amount: refundAmount,
-        currency: payment.currency,
+        currency,
         status: refund.status,
         message: "Refund processed successfully",
       };
@@ -938,64 +1009,72 @@ class PaymentService {
   async handlePaymentSuccess(paymentEntity) {
     try {
       const orderId = paymentEntity.order_id || paymentEntity.id;
-      const payment = await Payment.findOne({
-        where: { gatewayOrderId: orderId },
-      });
 
-      if (!payment) {
-        logger.warn("Payment not found for webhook", { orderId });
-        return;
-      }
+      const result = await sequelize.transaction(async (t) => {
+        // Lock the row so a concurrent call (webhook + client-driven
+        // verify racing each other) can't both see "not completed yet"
+        // and both apply commission / coupon usage.
+        const payment = await Payment.findOne({
+          where: { gatewayOrderId: orderId },
+          lock: t.LOCK.UPDATE,
+          transaction: t,
+        });
 
-      if (payment.status === "completed") {
-        logger.info("Payment already completed", { paymentId: payment.id });
-        return;
-      }
-
-      await payment.update({
-        status: "completed",
-        gatewayPaymentId: paymentEntity.id || paymentEntity.razorpay_payment_id,
-        paymentMethod: paymentEntity.method || paymentEntity.payment_method,
-        transactionReference: paymentEntity.id,
-        webhookData: paymentEntity,
-        paymentDate: new Date(),
-      });
-
-      // Calculate commission for service fees
-      if (payment.paymentType === "service_fee") {
-        payment.calculateCommission();
-        await payment.save();
-      }
-
-      // Record coupon usage if coupon was applied
-      if (payment.couponId) {
-        await couponService.recordCouponUsage(
-          payment.couponId,
-          payment.payerId,
-          payment.serviceRequestId,
-          payment.id,
-          payment.originalAmount,
-          payment.discountAmount,
-          payment.amount,
-        );
-      }
-
-      // Update service request status if needed
-      const serviceRequest = await ServiceRequest.findByPk(
-        payment.serviceRequestId,
-      );
-      if (serviceRequest) {
-        if (
-          payment.paymentType === "booking_fee" &&
-          serviceRequest.status === "accepted"
-        ) {
-          // Service request can move to next stage after booking payment
-          // You can add logic here to update service request status
+        if (!payment) {
+          logger.warn("Payment not found for webhook", { orderId });
+          return null;
         }
+
+        if (payment.status === "completed") {
+          logger.info("Payment already completed", { paymentId: payment.id });
+          return null;
+        }
+
+        await payment.update(
+          {
+            status: "completed",
+            gatewayPaymentId:
+              paymentEntity.id || paymentEntity.razorpay_payment_id,
+            paymentMethod: paymentEntity.method || paymentEntity.payment_method,
+            transactionReference: paymentEntity.id,
+            webhookData: paymentEntity,
+            paymentDate: new Date(),
+          },
+          { transaction: t },
+        );
+
+        // Calculate commission (service_fee and booking_fee both carry it)
+        if (
+          payment.paymentType === "service_fee" ||
+          payment.paymentType === "booking_fee"
+        ) {
+          payment.calculateCommission();
+          await payment.save({ transaction: t });
+        }
+
+        // Record coupon usage if coupon was applied
+        if (payment.couponId) {
+          await couponService.recordCouponUsage(
+            payment.couponId,
+            payment.payerId,
+            payment.serviceRequestId,
+            payment.id,
+            payment.originalAmount,
+            payment.discountAmount,
+            payment.amount,
+            t,
+          );
+        }
+
+        return payment;
+      });
+
+      if (!result) {
+        return;
       }
 
-      await this.clearPaymentCache(payment.id);
-      logger.info("Payment success handled", { paymentId: payment.id });
+      await this.clearPaymentCache(result.id);
+      logger.info("Payment success handled", { paymentId: result.id });
     } catch (error) {
       logger.error("Error handling payment success:", error);
       throw error;
@@ -1034,19 +1113,22 @@ class PaymentService {
     }
   }
 
+  // Matches the published Refund Policy (see RefundPolicy page):
+  // - Booking fee, before CA acceptance ("pending"): full refund.
+  // - Booking fee, after CA acceptance or later: forfeited by default (the
+  //   policy allows a discretionary refund "if the CA agrees", but that is a
+  //   manual/support decision, not something this automatic calculation grants).
+  // - Service fee: only ever charged once a service request is already
+  //   "completed" (see initiateFinalPayment), and completed work is
+  //   explicitly non-refundable per policy — so it never auto-refunds.
   calculateRefundAmount(payment) {
     const { paymentType, amount, serviceRequest } = payment;
 
     if (paymentType === "booking_fee") {
-      // Booking fee refund based on cancellation policy
-      if (["pending", "accepted"].includes(serviceRequest.status)) {
-        return amount; // Full refund
-      } else {
-        return 0; // No refund after CA starts work
+      if (serviceRequest?.status === "pending") {
+        return parseFloat(amount);
       }
-    } else if (paymentType === "service_fee") {
-      // Service fee refund (rare cases)
-      return amount * 0.5; // 50% refund
+      return 0;
     }
 
     return 0;

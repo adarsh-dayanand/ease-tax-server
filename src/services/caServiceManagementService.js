@@ -135,7 +135,6 @@ class CAServiceManagementService {
     try {
       const {
         serviceId,
-        customPrice,
         customDuration,
         currency = "INR",
         experienceLevel = "intermediate",
@@ -145,6 +144,15 @@ class CAServiceManagementService {
       const ca = await CA.findByPk(caId);
       if (!ca) {
         throw new Error("CA not found");
+      }
+
+      let customPrice = null;
+      if (serviceData.customPrice !== undefined && serviceData.customPrice !== null) {
+        const parsedPrice = parseFloat(serviceData.customPrice);
+        if (Number.isNaN(parsedPrice) || parsedPrice < 0) {
+          throw new Error("Price must be a non-negative number");
+        }
+        customPrice = parsedPrice;
       }
 
       // Validate Service exists
@@ -384,7 +392,11 @@ class CAServiceManagementService {
       const updates = {};
 
       if (serviceData.price !== undefined && serviceData.price !== null) {
-        updates.customPrice = parseFloat(serviceData.price) || 0;
+        const parsedPrice = parseFloat(serviceData.price);
+        if (Number.isNaN(parsedPrice) || parsedPrice < 0) {
+          throw new Error("Price must be a non-negative number");
+        }
+        updates.customPrice = parsedPrice;
       }
       if (serviceData.currency !== undefined) {
         updates.currency = serviceData.currency || "INR";

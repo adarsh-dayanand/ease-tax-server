@@ -69,19 +69,39 @@ class UserService {
         throw new Error("User not found");
       }
 
+      // Explicit allow-list — the controller only strips a few sensitive
+      // keys, which left every other User column (status, email,
+      // googleUid/phoneUid, phoneVerified, lastLogin, metadata, ...)
+      // writable, including allowing a suspended user to reactivate
+      // themselves via `status`.
+      const allowedFields = [
+        "name",
+        "phone",
+        "countryCode",
+        "pan",
+        "gstin",
+        "profileImage",
+      ];
+      const filteredData = {};
+      allowedFields.forEach((field) => {
+        if (updateData[field] !== undefined) {
+          filteredData[field] = updateData[field];
+        }
+      });
+
       if (
-        updateData.profileImage &&
-        updateData.profileImage.startsWith("data:image/")
+        filteredData.profileImage &&
+        filteredData.profileImage.startsWith("data:image/")
       ) {
         const s3Url = await documentService.uploadProfileImage(
-          updateData.profileImage,
+          filteredData.profileImage,
           userId,
           "user",
         );
-        updateData.profileImage = s3Url;
+        filteredData.profileImage = s3Url;
       }
 
-      await user.update(updateData);
+      await user.update(filteredData);
       return this.getUserProfile(userId);
     } catch (error) {
       logger.error("Error updating user profile:", error);

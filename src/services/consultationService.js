@@ -76,7 +76,11 @@ class ConsultationService {
   /**
    * Get consultation details with caching
    */
-  async getConsultationDetails(consultationId) {
+  // `requestingUserId` is optional so this can still be called internally
+  // right after a state change we've already authorized (bookConsultation,
+  // updateConsultationStatus). Any external/controller call site MUST pass
+  // it so access is actually checked.
+  async getConsultationDetails(consultationId, requestingUserId = null) {
     try {
       const serviceRequest = await ServiceRequest.findByPk(consultationId, {
         include: [
@@ -100,6 +104,14 @@ class ConsultationService {
 
       if (!serviceRequest) {
         throw new Error("Consultation not found");
+      }
+
+      if (
+        requestingUserId &&
+        serviceRequest.userId !== requestingUserId &&
+        serviceRequest.caId !== requestingUserId
+      ) {
+        throw new Error("Access denied");
       }
 
       let consultation;
@@ -187,7 +199,7 @@ class ConsultationService {
       }
 
       // Calculate refund based on cancellation policy
-      const refundAmount = this.calculateRefund(consultation);
+      const refundAmount = await this.calculateRefund(consultation);
 
       // Update consultation
       await consultation.update({
@@ -214,8 +226,26 @@ class ConsultationService {
   /**
    * Get consultation messages with caching
    */
-  async getConsultationMessages(consultationId, page = 1, limit = 50) {
+  async getConsultationMessages(
+    consultationId,
+    requestingUserId,
+    page = 1,
+    limit = 50,
+  ) {
     try {
+      const consultation = await ServiceRequest.findByPk(consultationId);
+
+      if (!consultation) {
+        throw new Error("Consultation not found");
+      }
+
+      if (
+        consultation.userId !== requestingUserId &&
+        consultation.caId !== requestingUserId
+      ) {
+        throw new Error("Access denied");
+      }
+
       const offset = (page - 1) * limit;
       const { rows, count } = await Message.findAndCountAll({
         where: { serviceRequestId: consultationId },
@@ -346,6 +376,13 @@ class ConsultationService {
         throw new Error("Consultation not found");
       }
 
+      if (
+        consultation.userId !== updatedBy &&
+        consultation.caId !== updatedBy
+      ) {
+        throw new Error("Access denied");
+      }
+
       await consultation.update({
         status,
         metadata: {
@@ -379,17 +416,24 @@ class ConsultationService {
     return progressMap[status] || 0;
   }
 
-  calculateRefund(consultation) {
-    const { status, estimatedAmount, finalAmount } = consultation;
-    const amount = finalAmount || estimatedAmount || 0;
-
-    if (["pending"].includes(status)) {
-      return amount; // Full refund
-    } else if (["accepted"].includes(status)) {
-      return amount * 0.5; // 50% refund
-    } else {
-      return 0; // No refund
+  // Mirrors paymentService.calculateRefundAmount's policy so the amount
+  // shown here for a cancellation matches what an actual refund request
+  // would grant (see the Refund Policy page: full refund only before CA
+  // acceptance, forfeited/discretionary after).
+  async calculateRefund(consultation) {
+    if (consultation.status !== "pending") {
+      return 0;
     }
+
+    const bookingPayment = await Payment.findOne({
+      where: {
+        serviceRequestId: consultation.id,
+        paymentType: "booking_fee",
+        status: "completed",
+      },
+    });
+
+    return bookingPayment ? parseFloat(bookingPayment.amount) : 0;
   }
 
   formatTimestamp(date) {

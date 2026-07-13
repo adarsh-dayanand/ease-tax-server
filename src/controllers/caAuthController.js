@@ -1,6 +1,21 @@
 const firebaseConfig = require("../config/firebase");
-const { CA } = require("../../models");
+const { CA, ServiceRequest } = require("../../models");
 const logger = require("../config/logger");
+
+const buildCAData = async (ca) => ({
+  id: ca.id,
+  name: ca.name,
+  email: ca.email,
+  phone: ca.phone,
+  location: ca.location,
+  image: ca.profileImage,
+  verified: ca.status === "active",
+  completedFilings: await ServiceRequest.count({
+    where: { caId: ca.id, status: "completed" },
+  }),
+  phoneVerified: ca.phoneVerified,
+  lastLogin: ca.lastLogin,
+});
 
 /**
  * SECURITY NOTE: CAs cannot self-register through this endpoint.
@@ -26,7 +41,18 @@ exports.googleLoginOrRegister = async (req, res) => {
       throw new Error(verificationResult.error);
     }
     const decodedToken = verificationResult.data;
-    const { email, name, picture, uid } = decodedToken;
+    const { email, name, picture, uid, email_verified: emailVerified } =
+      decodedToken;
+
+    if (!emailVerified) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: "EMAIL_NOT_VERIFIED",
+          message: "Email address is not verified",
+        },
+      });
+    }
 
     // Find CA (DO NOT create - CAs must be pre-registered by admin)
     let ca = await CA.findOne({ where: { email } });
@@ -41,34 +67,33 @@ exports.googleLoginOrRegister = async (req, res) => {
       });
     }
 
+    if (ca.status !== "active") {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: "AUTH_UNAUTHORIZED",
+          message: "CA account pending verification or inactive",
+        },
+      });
+    }
+
     // Update existing CA - login and Google UID if not set
     await ca.update({
       lastLogin: new Date(),
       googleUid: ca.googleUid || uid,
-      image: ca.image || picture,
+      profileImage: ca.profileImage || picture,
     });
     logger.info(`CA logged in via Google: ${email}`, { caId: ca.id });
 
     // Return CA data (exclude sensitive fields)
-    const caData = {
-      id: ca.id,
-      name: ca.name,
-      email: ca.email,
-      phone: ca.phone,
-      location: ca.location,
-      image: ca.image,
-      verified: ca.verified,
-      completedFilings: ca.completedFilings,
-      phoneVerified: ca.phoneVerified,
-      lastLogin: ca.lastLogin,
-    };
+    const caData = await buildCAData(ca);
 
     return res.json({
       success: true,
       data: {
         ca: caData,
         isNewCA: !ca.phone, // Assuming new CAs need to complete profile
-        requiresVerification: !ca.verified,
+        requiresVerification: !caData.verified,
       },
     });
   } catch (err) {
@@ -148,8 +173,10 @@ exports.phoneLogin = async (req, res) => {
 
     // If still not found, try by googleUid (user logged in with Google first, now trying phone)
     if (!ca) {
-      // Try to find by email if available in token (for account linking)
-      const emailFromToken = decodedToken.email;
+      // Try to find by email if available in token (for account linking) —
+      // only trust it when Firebase has verified that email.
+      const emailFromToken =
+        decodedToken.email_verified === true ? decodedToken.email : null;
       if (emailFromToken) {
         const normalizedEmail = emailFromToken.trim().toLowerCase();
         ca = await CA.findOne({ where: { email: normalizedEmail } });
@@ -183,6 +210,16 @@ exports.phoneLogin = async (req, res) => {
       });
     }
 
+    if (ca.status !== "active") {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: "AUTH_UNAUTHORIZED",
+          message: "CA account pending verification or inactive",
+        },
+      });
+    }
+
     // Update last login, phone verification, and phoneUid if not set
     const updateData = {
       lastLogin: new Date(),
@@ -201,25 +238,14 @@ exports.phoneLogin = async (req, res) => {
     logger.info(`CA logged in via phone: ${normalizedPhone}`, { caId: ca.id });
 
     // Return CA data
-    const caData = {
-      id: ca.id,
-      name: ca.name,
-      email: ca.email,
-      phone: ca.phone,
-      location: ca.location,
-      image: ca.image,
-      verified: ca.verified,
-      completedFilings: ca.completedFilings,
-      phoneVerified: ca.phoneVerified,
-      lastLogin: ca.lastLogin,
-    };
+    const caData = await buildCAData(ca);
 
     return res.json({
       success: true,
       data: {
         ca: caData,
         isNewCA: !ca.phone,
-        requiresVerification: !ca.verified,
+        requiresVerification: !caData.verified,
       },
     });
   } catch (err) {
@@ -285,7 +311,6 @@ exports.requestCARegistration = async (req, res) => {
       email,
       phone,
       location,
-      verified: false,
       status: "pending_registration",
       metadata: {
         registrationRequest: true,

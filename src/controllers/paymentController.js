@@ -372,16 +372,23 @@ class PaymentController {
         finalPayments,
       ] = await Promise.all([
         Payment.sum("amount", {
-          where: { status: "completed", amount: { [Op.gt]: 0 } },
+          where: {
+            status: "completed",
+            paymentType: { [Op.in]: ["booking_fee", "service_fee"] },
+          },
         }),
         Payment.count(),
         Payment.count({ where: { status: "completed" } }),
         Payment.count({ where: { status: "failed" } }),
         Payment.sum("amount", {
-          where: { type: "refund", status: "completed" },
+          where: { paymentType: "refund", status: "completed" },
         }),
-        Payment.count({ where: { type: "booking", status: "completed" } }),
-        Payment.count({ where: { type: "final", status: "completed" } }),
+        Payment.count({
+          where: { paymentType: "booking_fee", status: "completed" },
+        }),
+        Payment.count({
+          where: { paymentType: "service_fee", status: "completed" },
+        }),
       ]);
 
       const analytics = {

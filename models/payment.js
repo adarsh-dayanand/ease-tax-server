@@ -205,11 +205,16 @@ module.exports = (sequelize, DataTypes) => {
 
   // Instance methods
   Payment.prototype.calculateCommission = function () {
-    if (this.paymentType === "service_fee") {
-      // Use the commission percentage stored in payment (from CA's commission rate)
+    if (this.paymentType === "service_fee" || this.paymentType === "booking_fee") {
+      // this.amount is GST-inclusive (see paymentService.js order/final-amount
+      // construction). Commission is charged on the GST-exclusive base amount
+      // so the platform isn't taking a cut of tax that passes through to the
+      // government, and so this matches how earnings are reported elsewhere.
+      const GST_RATE = 0.18;
       const commissionRate = this.commissionPercentage || 8.0;
-      this.commissionAmount = ((this.amount * commissionRate) / 100).toFixed(2);
-      this.netAmount = (this.amount - this.commissionAmount).toFixed(2);
+      const baseAmount = this.amount / (1 + GST_RATE);
+      this.commissionAmount = ((baseAmount * commissionRate) / 100).toFixed(2);
+      this.netAmount = (baseAmount - this.commissionAmount).toFixed(2);
     }
     return this;
   };

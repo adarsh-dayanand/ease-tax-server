@@ -49,8 +49,10 @@ class ConsultationController {
       const { consultationId } = req.params;
       const userId = req.user.id;
 
-      const consultation =
-        await consultationService.getConsultationDetails(consultationId);
+      const consultation = await consultationService.getConsultationDetails(
+        consultationId,
+        userId,
+      );
 
       if (!consultation) {
         return res.status(404).json({
@@ -59,16 +61,18 @@ class ConsultationController {
         });
       }
 
-      // Check access permissions (user can only see their own consultations)
-      // This would require fetching the consultation's userId from the service
-      // For now, we'll assume the service handles access control
-
       res.json({
         success: true,
         data: consultation,
       });
     } catch (error) {
       logger.error("Error in getConsultationDetails:", error);
+      if (error.message === "Consultation not found") {
+        return res.status(404).json({ success: false, message: error.message });
+      }
+      if (error.message === "Access denied") {
+        return res.status(403).json({ success: false, message: error.message });
+      }
       res.status(500).json({
         success: false,
         message: "Internal server error",
@@ -114,9 +118,11 @@ class ConsultationController {
     try {
       const { consultationId } = req.params;
       const { page = 1, limit = 50 } = req.query;
+      const userId = req.user.id;
 
       const messages = await consultationService.getConsultationMessages(
         consultationId,
+        userId,
         parseInt(page),
         parseInt(limit),
       );
@@ -128,6 +134,12 @@ class ConsultationController {
       });
     } catch (error) {
       logger.error("Error in getConsultationMessages:", error);
+      if (error.message === "Consultation not found") {
+        return res.status(404).json({ success: false, message: error.message });
+      }
+      if (error.message === "Access denied") {
+        return res.status(403).json({ success: false, message: error.message });
+      }
       res.status(500).json({
         success: false,
         message: "Internal server error",
@@ -276,10 +288,13 @@ class ConsultationController {
         });
       }
 
-      const { ServiceRequest } = require("../../models");
+      const { ServiceRequest, Payment } = require("../../models");
       const { Op } = require("sequelize");
 
       // Get analytics data
+      // Revenue comes from actual completed Payment records — ServiceRequest
+      // has no stored amount column (service price lives on CAService and
+      // is only realized once a Payment is made).
       const [
         totalConsultations,
         pendingConsultations,
@@ -291,7 +306,12 @@ class ConsultationController {
         ServiceRequest.count({ where: { status: "pending" } }),
         ServiceRequest.count({ where: { status: "completed" } }),
         ServiceRequest.count({ where: { status: "cancelled" } }),
-        ServiceRequest.sum("totalAmount", { where: { status: "completed" } }),
+        Payment.sum("amount", {
+          where: {
+            status: "completed",
+            paymentType: { [Op.in]: ["booking_fee", "service_fee"] },
+          },
+        }),
       ]);
 
       const analytics = {

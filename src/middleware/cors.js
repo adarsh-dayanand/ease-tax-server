@@ -58,10 +58,24 @@ const getCorsOptions = () => {
         return callback(null, true);
       }
 
-      // Subdomain check (optional but safer for dev)
+      // Subdomain check — must match the allowed host exactly, or be a true
+      // subdomain of it (bounded by a "."). A plain string suffix check
+      // (origin.endsWith(allowedHost)) would also match a look-alike domain
+      // like "evileasetax.co.in", which is NOT a subdomain of easetax.co.in.
       const isAllowedSubdomain = allowedOrigins.some((allowed) => {
         if (!allowed || typeof allowed !== "string") return false;
-        return origin.endsWith(allowed.replace(/^https?:\/\//, ""));
+        const allowedHost = allowed
+          .replace(/^https?:\/\//, "")
+          .replace(/\/$/, "");
+        let originHost;
+        try {
+          originHost = new URL(origin).host;
+        } catch {
+          return false;
+        }
+        return (
+          originHost === allowedHost || originHost.endsWith(`.${allowedHost}`)
+        );
       });
 
       if (isAllowedSubdomain) {

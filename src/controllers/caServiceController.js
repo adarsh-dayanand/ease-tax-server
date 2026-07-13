@@ -406,10 +406,12 @@ class CAServiceController {
         }
       }
 
-      // Map frontend data to backend format for associateCAWithService
+      // Map frontend data to backend format for associateCAWithService.
+      // Pass the raw price through (rather than defaulting invalid input to
+      // 0/free) so associateCAWithService's validation can reject it.
       const mappedServiceData = {
         serviceId: service.id,
-        customPrice: parseFloat(serviceData.price) || 0,
+        customPrice: serviceData.price,
         currency: serviceData.currency || "INR",
         customDuration: serviceData.duration || null,
         notes: serviceData.serviceDescription || null,

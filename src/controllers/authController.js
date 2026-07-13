@@ -52,7 +52,8 @@ exports.googleLoginOrRegister = async (req, res) => {
     }
 
     const decodedToken = verificationResult.data;
-    const { email, name, picture, uid } = decodedToken;
+    const { email, name, picture, uid, email_verified: emailVerified } =
+      decodedToken;
     // Validate required fields
     if (!email) {
       logger.error("Email missing from Firebase token", {
@@ -65,6 +66,17 @@ exports.googleLoginOrRegister = async (req, res) => {
         tokenKeys: Object.keys(decodedToken),
       });
       throw new Error("UID is required but not found in token");
+    }
+    // Only trust email-based account matching when Firebase has verified
+    // the email — otherwise a token from an unverified sign-in method could
+    // be used to get matched to (and take over) an existing account that
+    // owns that email address.
+    if (!emailVerified) {
+      logger.warn("Rejecting login: email not verified by Firebase", {
+        uid,
+        email,
+      });
+      throw new Error("Email address is not verified");
     }
 
     // Ensure name has a value (required field in database)

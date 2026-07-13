@@ -11,7 +11,7 @@ class UserController {
       const { userId } = req.params;
 
       // Validate user access (users can only access their own profile)
-      if (req.user.id !== userId && req.user.role !== "admin") {
+      if (req.user.id !== userId && req.user.type !== "admin") {
         return res.status(403).json({
           success: false,
           message: "Access denied",
@@ -50,7 +50,7 @@ class UserController {
       const updateData = req.body;
 
       // Validate user access
-      if (req.user.id !== userId && req.user.role !== "admin") {
+      if (req.user.id !== userId && req.user.type !== "admin") {
         return res.status(403).json({
           success: false,
           message: "Access denied",
@@ -93,7 +93,7 @@ class UserController {
       const { page = 1, limit = 10 } = req.query;
 
       // Validate user access
-      if (req.user.id !== userId && req.user.role !== "admin") {
+      if (req.user.id !== userId && req.user.type !== "admin") {
         return res.status(403).json({
           success: false,
           message: "Access denied",
@@ -130,7 +130,7 @@ class UserController {
       const { page = 1, limit = 10 } = req.query;
 
       // Validate user access
-      if (req.user.id !== userId && req.user.role !== "admin") {
+      if (req.user.id !== userId && req.user.type !== "admin") {
         return res.status(403).json({
           success: false,
           message: "Access denied",
@@ -167,7 +167,7 @@ class UserController {
       const { page = 1, limit = 10 } = req.query;
 
       // Validate user access
-      if (req.user.id !== userId && req.user.role !== "admin") {
+      if (req.user.id !== userId && req.user.type !== "admin") {
         return res.status(403).json({
           success: false,
           message: "Access denied",
@@ -203,7 +203,7 @@ class UserController {
       const { userId } = req.params;
 
       // Validate user access
-      if (req.user.id !== userId && req.user.role !== "admin") {
+      if (req.user.id !== userId && req.user.type !== "admin") {
         return res.status(403).json({
           success: false,
           message: "Access denied",
@@ -252,7 +252,7 @@ class UserController {
       const { userId } = req.params;
 
       // Only admin can clear cache
-      if (req.user.role !== "admin") {
+      if (req.user.type !== "admin") {
         return res.status(403).json({
           success: false,
           message: "Access denied",

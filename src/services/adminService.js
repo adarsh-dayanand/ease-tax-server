@@ -21,9 +21,9 @@ class AdminService {
 
       if (status) {
         if (status === "verified") {
-          whereClause.verified = true;
+          whereClause.status = "active";
         } else if (status === "pending") {
-          whereClause.verified = false;
+          whereClause.status = "pending_registration";
         } else if (status === "suspended") {
           whereClause.status = "suspended";
         }
@@ -36,16 +36,29 @@ class AdminService {
         order: [["createdAt", "DESC"]],
       });
 
+      const completedCounts = await ServiceRequest.findAll({
+        where: {
+          caId: { [Op.in]: rows.map((ca) => ca.id) },
+          status: "completed",
+        },
+        attributes: ["caId", [fn("COUNT", col("id")), "count"]],
+        group: ["caId"],
+        raw: true,
+      });
+      const completedByCaId = Object.fromEntries(
+        completedCounts.map((r) => [r.caId, parseInt(r.count, 10) || 0]),
+      );
+
       const cas = rows.map((ca) => ({
         id: ca.id,
         name: ca.name,
         email: ca.email,
         phone: ca.phone,
         location: ca.location,
-        image: ca.image,
-        verified: ca.verified,
+        image: ca.profileImage,
+        verified: ca.status === "active",
         status: ca.status || "active",
-        completedFilings: ca.completedFilings,
+        completedFilings: completedByCaId[ca.id] || 0,
         phoneVerified: ca.phoneVerified,
         lastLogin: ca.lastLogin,
         createdAt: ca.createdAt,
@@ -74,7 +87,7 @@ class AdminService {
       const offset = (page - 1) * limit;
 
       const { rows, count } = await CA.findAndCountAll({
-        where: { verified: false },
+        where: { status: "pending_registration" },
         limit,
         offset,
         order: [["createdAt", "ASC"]], // Oldest first for verification queue
@@ -86,7 +99,7 @@ class AdminService {
         email: ca.email,
         phone: ca.phone,
         location: ca.location,
-        image: ca.image,
+        image: ca.profileImage,
         registeredAt: ca.createdAt,
         daysPending: Math.floor(
           (new Date() - new Date(ca.createdAt)) / (1000 * 60 * 60 * 24),
@@ -150,9 +163,8 @@ class AdminService {
         caNumber,
         caTypeId,
         commissionPercentage: parseFloat(commissionPercentage),
-        verified: autoVerify,
         phoneVerified: true, // Admin registered CAs are phone verified
-        status: "active",
+        status: autoVerify ? "active" : "pending_registration",
         metadata: {
           registeredBy: adminId,
           registeredAt: new Date(),
@@ -178,12 +190,11 @@ class AdminService {
         throw new Error("CA not found");
       }
 
-      if (ca.verified) {
+      if (ca.status === "active") {
         throw new Error("CA is already verified");
       }
 
       await ca.update({
-        verified: true,
         status: "active",
         metadata: {
           ...ca.metadata,
@@ -212,7 +223,6 @@ class AdminService {
       }
 
       await ca.update({
-        verified: false,
         status: "rejected",
         metadata: {
           ...ca.metadata,
@@ -559,7 +569,7 @@ class AdminService {
         throw new Error("CA not found");
       }
 
-      if (!ca.verified) {
+      if (ca.status !== "active") {
         throw new Error("Cannot assign unverified CA");
       }
 
@@ -604,8 +614,8 @@ class AdminService {
       ] = await Promise.all([
         User.count(),
         CA.count(),
-        CA.count({ where: { verified: true } }),
-        CA.count({ where: { verified: false } }),
+        CA.count({ where: { status: "active" } }),
+        CA.count({ where: { status: "pending_registration" } }),
         ServiceRequest.count(),
         ServiceRequest.count({
           where: { status: { [Op.in]: ["accepted", "in_progress"] } },
@@ -783,7 +793,15 @@ class AdminService {
         attributes: [
           "id",
           "name",
-          "completedFilings",
+          [
+            literal(`(
+              SELECT COUNT(*)
+              FROM service_requests
+              WHERE service_requests.caId = CA.id
+              AND service_requests.status = 'completed'
+            )`),
+            "completedFilings",
+          ],
           [
             literal(`(
               SELECT AVG(rating)
@@ -803,15 +821,15 @@ class AdminService {
             "periodRevenue",
           ],
         ],
-        where: { verified: true },
-        order: [["completedFilings", "DESC"]],
+        where: { status: "active" },
+        order: [[literal('"completedFilings"'), "DESC"]],
         limit,
       });
 
       return topCAs.map((ca) => ({
         id: ca.id,
         name: ca.name,
-        completedFilings: ca.completedFilings,
+        completedFilings: parseInt(ca.dataValues.completedFilings || 0, 10),
         avgRating: parseFloat(ca.dataValues.avgRating || 0).toFixed(1),
         periodRevenue: parseFloat(ca.dataValues.periodRevenue || 0),
       }));
@@ -905,16 +923,20 @@ class AdminService {
         return null;
       }
 
+      const completedFilings = await ServiceRequest.count({
+        where: { caId, status: "completed" },
+      });
+
       return {
         id: ca.id,
         name: ca.name,
         email: ca.email,
         phone: ca.phone,
         location: ca.location,
-        image: ca.image,
-        verified: ca.verified,
+        image: ca.profileImage,
+        verified: ca.status === "active",
         status: ca.status || "active",
-        completedFilings: ca.completedFilings,
+        completedFilings,
         phoneVerified: ca.phoneVerified,
         lastLogin: ca.lastLogin,
         createdAt: ca.createdAt,

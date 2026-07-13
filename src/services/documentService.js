@@ -61,6 +61,21 @@ class DocumentService {
     fileType,
   ) {
     try {
+      // Verify the uploader is actually a party to this service request —
+      // otherwise any authenticated user/CA could attach a document to an
+      // arbitrary service request they have no relationship to.
+      const ServiceRequest = require("../../models").ServiceRequest;
+      const serviceRequest = await ServiceRequest.findByPk(serviceRequestId);
+      if (!serviceRequest) {
+        throw new Error("Service request not found");
+      }
+      if (
+        serviceRequest.userId !== uploadedBy &&
+        serviceRequest.caId !== uploadedBy
+      ) {
+        throw new Error("Access denied");
+      }
+
       // Generate unique filename
       const fileExtension = path.extname(file.originalname);
       const fileName = `${serviceRequestId}/${crypto.randomUUID()}${fileExtension}`;
@@ -335,6 +350,82 @@ class DocumentService {
       };
     } catch (error) {
       logger.error("Error downloading document:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get a single document's details (metadata only, not a download link)
+   */
+  async getDocumentDetails(documentId, userId) {
+    try {
+      const document = await Document.findByPk(documentId);
+
+      if (!document || document.status === "deleted") {
+        throw new Error("Document not found");
+      }
+
+      const ServiceRequest = require("../../models").ServiceRequest;
+      const serviceRequest = await ServiceRequest.findByPk(
+        document.serviceRequestId,
+      );
+
+      if (
+        !serviceRequest ||
+        (serviceRequest.userId !== userId && serviceRequest.caId !== userId)
+      ) {
+        throw new Error("Access denied");
+      }
+
+      return {
+        id: document.id,
+        serviceRequestId: document.serviceRequestId,
+        name: document.originalName,
+        fileType: document.fileType,
+        mimeType: document.mimeType,
+        size: this.formatFileSize(document.fileSize),
+        status: document.status,
+        uploadedBy: document.uploadedBy,
+        uploaderType: document.uploaderType,
+        uploadedAt: document.createdAt,
+      };
+    } catch (error) {
+      logger.error("Error getting document details:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get a document's processing/verification status
+   */
+  async getDocumentStatus(documentId, userId) {
+    try {
+      const document = await Document.findByPk(documentId);
+
+      if (!document || document.status === "deleted") {
+        throw new Error("Document not found");
+      }
+
+      const ServiceRequest = require("../../models").ServiceRequest;
+      const serviceRequest = await ServiceRequest.findByPk(
+        document.serviceRequestId,
+      );
+
+      if (
+        !serviceRequest ||
+        (serviceRequest.userId !== userId && serviceRequest.caId !== userId)
+      ) {
+        throw new Error("Access denied");
+      }
+
+      return {
+        id: document.id,
+        status: document.status,
+        rejectionReason: document.rejectionReason,
+        verifiedAt: document.verifiedAt,
+      };
+    } catch (error) {
+      logger.error("Error getting document status:", error);
       throw error;
     }
   }

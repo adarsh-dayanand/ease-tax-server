@@ -88,24 +88,49 @@ class CouponService {
     paymentId,
     originalAmount,
     discountAmount,
-    finalAmount
+    finalAmount,
+    transaction = null
   ) {
     try {
-      // Create coupon usage record
-      const couponUsage = await CouponUsage.create({
-        couponId,
-        userId,
-        serviceRequestId,
-        paymentId,
-        originalAmount,
-        discountAmount,
-        finalAmount,
+      const coupon = await Coupon.findByPk(couponId, {
+        lock: transaction ? transaction.LOCK.UPDATE : undefined,
+        transaction,
       });
 
+      if (coupon) {
+        // Re-check the per-user usage limit under the row lock — the
+        // initial check at payment-initiation time can't prevent two
+        // concurrent bookings from both passing it before either usage is
+        // recorded.
+        const canUse = await coupon.canBeUsedBy(userId);
+        if (!canUse) {
+          logger.warn(
+            "Coupon usage limit reached at redemption time; skipping usage record",
+            { couponId, userId, paymentId },
+          );
+          return null;
+        }
+      }
+
+      // Create coupon usage record
+      const couponUsage = await CouponUsage.create(
+        {
+          couponId,
+          userId,
+          serviceRequestId,
+          paymentId,
+          originalAmount,
+          discountAmount,
+          finalAmount,
+        },
+        { transaction },
+      );
+
       // Increment coupon usage count
-      await Coupon.increment("usageCount", {
-        where: { id: couponId },
-      });
+      await Coupon.increment(
+        "usageCount",
+        { where: { id: couponId }, transaction },
+      );
 
       return couponUsage;
     } catch (error) {

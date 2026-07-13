@@ -84,24 +84,29 @@ class WebSocketService {
         }
 
         const decodedToken = verificationResult.data;
-        const { uid, email } = decodedToken;
+        const { uid, email, email_verified: emailVerified } = decodedToken;
 
         logger.debug("WebSocket auth: Firebase token verified", {
           uid,
           email,
+          emailVerified,
         });
 
         const identityClause = [
           { googleUid: uid },
           { phoneUid: uid },
-          email ? { email: email.toLowerCase().trim() } : null,
+          email && emailVerified ? { email: email.toLowerCase().trim() } : null,
         ].filter(Boolean);
 
-        // Match HTTP auth: googleUid, phoneUid, or email
+        // Match HTTP auth: googleUid, phoneUid, or verified email
         let user = await User.findOne({
           where: { [Op.or]: identityClause },
         });
         let userType = "user";
+
+        if (user && user.status !== "active") {
+          user = null;
+        }
 
         if (!user) {
           user = await CA.findOne({
@@ -109,6 +114,9 @@ class WebSocketService {
           });
           if (user) {
             userType = "ca";
+            if (user.status !== "active") {
+              user = null;
+            }
           }
         }
 

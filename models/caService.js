@@ -63,12 +63,12 @@ module.exports = (sequelize) => {
           fields: ["caId"],
         },
         {
-          fields: ["serviceType"],
+          fields: ["serviceId"],
         },
         {
           unique: true,
-          fields: ["caId", "serviceType"],
-          name: "unique_ca_service_type",
+          fields: ["caId", "serviceId"],
+          name: "unique_ca_service",
         },
       ],
     }

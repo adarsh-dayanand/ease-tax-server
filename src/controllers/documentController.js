@@ -25,11 +25,19 @@ class DocumentController {
         });
       }
 
+      if (!serviceRequestId) {
+        return res.status(400).json({
+          success: false,
+          message: "serviceRequestId is required",
+        });
+      }
+
       const document = await documentService.uploadDocument(
-        userId,
         req.file,
-        documentType,
         serviceRequestId,
+        userId,
+        req.user.type === "ca" ? "ca" : "user",
+        documentType,
       );
 
       res.status(201).json({
@@ -39,6 +47,9 @@ class DocumentController {
       });
     } catch (error) {
       logger.error("Error in uploadDocument:", error);
+      if (error.message === "Access denied") {
+        return res.status(403).json({ success: false, message: error.message });
+      }
       res.status(400).json({
         success: false,
         message: error.message || "Failed to upload document",

@@ -128,58 +128,34 @@ class CAManagementService {
         },
       );
 
-      // Calculate total earnings from payments
-      // IMPORTANT: Commission should be calculated on FULL SERVICE PRICE (totalAmount), not on (servicePrice - bookingFee)
+      // Sum earnings directly from each payment's persisted commission/net
+      // figures (Payment.calculateCommission), rather than recomputing them
+      // here — recomputing independently previously produced numbers that
+      // disagreed with what was actually recorded on the payment.
       const earningsStartTime = Date.now();
-      const caCommissionPercentage =
-        parseFloat(ca?.commissionPercentage) || 8.0;
-      logger.info(
-        `[Dashboard] Commission percentage for CA ${caId}: ${caCommissionPercentage}`,
-      );
-      const bookingFee = 999;
 
       let totalGrossEarnings = 0;
       let totalCommission = 0;
       let totalEarnings = 0;
 
-      logger.info(
-        `[Dashboard] Processing ${paymentsForEarnings.length} payments for CA: ${caId}`,
-      );
-
       paymentsForEarnings.forEach((payment) => {
         const amountWithGst = parseFloat(payment.amount) || 0;
         const baseAmount = amountWithGst / 1.18; // Exclude 18% GST
-
-        // Use stored commission if available, else calculate from base amount
-        const paymentCommissionPercentage =
-          parseFloat(payment.commissionPercentage) || caCommissionPercentage;
-
-        let commission = parseFloat(payment.commissionAmount) || 0;
-        if (commission <= 0) {
-          commission = (baseAmount * paymentCommissionPercentage) / 100;
-        }
-
-        const netAmount = baseAmount - commission;
+        const commission = parseFloat(payment.commissionAmount) || 0;
+        const netAmount =
+          payment.netAmount != null
+            ? parseFloat(payment.netAmount)
+            : baseAmount - commission;
 
         totalGrossEarnings += baseAmount;
         totalCommission += commission;
         totalEarnings += netAmount;
-
-        logger.info("Earnings calculation", {
-          paymentId: payment.id,
-          type: payment.paymentType,
-          amountWithGst,
-          baseAmount,
-          commission,
-          netAmount,
-        });
       });
 
       logger.info(
         `[Dashboard] Earnings calculated for CA: ${caId} (${Date.now() - earningsStartTime}ms)`,
         {
           paymentCount: paymentsForEarnings.length,
-          totalEarnings,
         },
       );
 
@@ -213,8 +189,8 @@ class CAManagementService {
           id: ca.id,
           name: ca.name,
           image: ca.profileImage,
-          verified: ca.verified,
-          completedFilings: ca.completedFilings,
+          verified: ca.status === "active",
+          completedFilings: completedRequests,
           specializations:
             ca.specializations?.map((s) => s.specialization) || [],
         },
@@ -443,7 +419,7 @@ class CAManagementService {
       const { notes } = acceptanceData;
 
       const request = await ServiceRequest.findOne({
-        where: { id: requestId, status: "pending" },
+        where: { id: requestId, caId, status: "pending" },
         include: [
           {
             model: User,
@@ -486,7 +462,7 @@ class CAManagementService {
   async rejectRequest(requestId, caId, reason) {
     try {
       const request = await ServiceRequest.findOne({
-        where: { id: requestId, status: "pending" },
+        where: { id: requestId, caId, status: "pending" },
         include: [
           {
             model: User,
@@ -577,7 +553,11 @@ class CAManagementService {
       const { completionNotes, deliverables } = completionData;
 
       const request = await ServiceRequest.findOne({
-        where: { id: requestId, caId },
+        where: {
+          id: requestId,
+          caId,
+          status: { [Op.in]: ["accepted", "in_progress"] },
+        },
         include: [
           {
             model: User,
@@ -588,7 +568,9 @@ class CAManagementService {
       });
 
       if (!request) {
-        throw new Error("Request not found or access denied");
+        throw new Error(
+          "Request not found, access denied, or not in a completable state",
+        );
       }
 
       await request.update({
@@ -602,8 +584,9 @@ class CAManagementService {
         },
       });
 
-      // Update CA's completed filings count
-      await CA.increment("completedFilings", { where: { id: caId } });
+      // Note: completedFilings is derived from completed ServiceRequest
+      // counts (see getCADashboard/caService.getCAProfile), not a stored
+      // CA column, so there is nothing to increment here.
 
       return {
         id: request.id,
@@ -628,6 +611,10 @@ class CAManagementService {
         throw new Error("CA not found");
       }
 
+      const completedFilings = await ServiceRequest.count({
+        where: { caId, status: "completed" },
+      });
+
       return {
         id: ca.id,
         name: ca.name,
@@ -636,8 +623,8 @@ class CAManagementService {
         countryCode: ca.countryCode || null,
         location: ca.location,
         image: ca.profileImage,
-        verified: ca.verified,
-        completedFilings: ca?.completedFilings,
+        verified: ca.status === "active",
+        completedFilings,
         phoneVerified: ca?.phoneVerified,
       };
     } catch (error) {
