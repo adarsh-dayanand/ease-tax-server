@@ -227,6 +227,11 @@ class PaymentService {
         },
       });
 
+      // Persist commission on create (same as service_fee) so pending rows and
+      // dashboard totals stay consistent even before webhook success re-runs it.
+      payment.calculateCommission();
+      await payment.save();
+
       // Ensure keyId is available before proceeding
       if (!this.razorpayKeyId) {
         logger.error("Razorpay Key ID is not configured");

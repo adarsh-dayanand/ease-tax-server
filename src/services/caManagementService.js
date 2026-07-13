@@ -128,27 +128,26 @@ class CAManagementService {
         },
       );
 
-      // Sum earnings directly from each payment's persisted commission/net
-      // figures (Payment.calculateCommission), rather than recomputing them
-      // here — recomputing independently previously produced numbers that
-      // disagreed with what was actually recorded on the payment.
+      // Always recompute earnings with the same GST-exclusive formula used by
+      // Payment.calculateCommission. Stored netAmount/commissionAmount on older
+      // rows were computed on GST-inclusive amounts (and booking fees often had
+      // null net), which made "net payout" exceed "gross earnings".
       const earningsStartTime = Date.now();
+      const caCommissionPercentage =
+        parseFloat(ca?.commissionPercentage) || 8.0;
 
       let totalGrossEarnings = 0;
       let totalCommission = 0;
       let totalEarnings = 0;
 
       paymentsForEarnings.forEach((payment) => {
-        const amountWithGst = parseFloat(payment.amount) || 0;
-        const baseAmount = amountWithGst / 1.18; // Exclude 18% GST
-        const commission = parseFloat(payment.commissionAmount) || 0;
-        const netAmount =
-          payment.netAmount != null
-            ? parseFloat(payment.netAmount)
-            : baseAmount - commission;
+        const rate =
+          parseFloat(payment.commissionPercentage) || caCommissionPercentage;
+        const { baseAmount, commissionAmount, netAmount } =
+          Payment.computeEarningsFromAmount(payment.amount, rate);
 
         totalGrossEarnings += baseAmount;
-        totalCommission += commission;
+        totalCommission += commissionAmount;
         totalEarnings += netAmount;
       });
 

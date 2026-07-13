@@ -203,6 +203,30 @@ module.exports = (sequelize, DataTypes) => {
     });
   };
 
+  /**
+   * Derive GST-exclusive gross, platform commission, and CA net from a
+   * GST-inclusive payment amount. Used by calculateCommission and by the
+   * CA dashboard so display totals always match what gets persisted.
+   *
+   * Historical rows may still have commission/net computed on the
+   * GST-inclusive amount (or booking fees with null net) — callers that
+   * need correct totals should recompute via this helper rather than
+   * summing stored netAmount blindly.
+   */
+  Payment.computeEarningsFromAmount = function (
+    amountWithGst,
+    commissionPercentage,
+  ) {
+    const GST_RATE = 0.18;
+    const commissionRate = parseFloat(commissionPercentage) || 8.0;
+    const baseAmount =
+      Math.round((parseFloat(amountWithGst) / (1 + GST_RATE)) * 100) / 100;
+    const commissionAmount =
+      Math.round(((baseAmount * commissionRate) / 100) * 100) / 100;
+    const netAmount = Math.round((baseAmount - commissionAmount) * 100) / 100;
+    return { baseAmount, commissionAmount, netAmount };
+  };
+
   // Instance methods
   Payment.prototype.calculateCommission = function () {
     if (this.paymentType === "service_fee" || this.paymentType === "booking_fee") {
@@ -210,11 +234,12 @@ module.exports = (sequelize, DataTypes) => {
       // construction). Commission is charged on the GST-exclusive base amount
       // so the platform isn't taking a cut of tax that passes through to the
       // government, and so this matches how earnings are reported elsewhere.
-      const GST_RATE = 0.18;
-      const commissionRate = this.commissionPercentage || 8.0;
-      const baseAmount = this.amount / (1 + GST_RATE);
-      this.commissionAmount = ((baseAmount * commissionRate) / 100).toFixed(2);
-      this.netAmount = (baseAmount - this.commissionAmount).toFixed(2);
+      const { commissionAmount, netAmount } = Payment.computeEarningsFromAmount(
+        this.amount,
+        this.commissionPercentage,
+      );
+      this.commissionAmount = commissionAmount.toFixed(2);
+      this.netAmount = netAmount.toFixed(2);
     }
     return this;
   };
