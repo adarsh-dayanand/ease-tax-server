@@ -46,50 +46,78 @@ const authenticateToken = async (req, res, next) => {
         emailVerified,
       });
 
-      // Sequential checks to avoid overloading DB with 3 queries per request
-      // Check User first (most likely)
-      let user = await User.findOne({
-        where: {
-          [require("sequelize").Op.or]: [
-            { googleUid: uid },
-            { phoneUid: uid },
-            emailClause,
-          ].filter(Boolean),
-        },
-      });
+      // Prefer Admin on admin API routes. Same Google identity often exists as
+      // User and Admin; without this, User matches first and requireAdmin 403s.
+      const requestPath = `${req.baseUrl || ""}${req.path || ""}`;
+      const preferAdmin =
+        requestPath.includes("/admin") ||
+        (typeof req.originalUrl === "string" &&
+          req.originalUrl.includes("/api/admin"));
 
+      let user = null;
       let userType = "user";
 
+      const { Op } = require("sequelize");
+      const uidOrEmail = [
+        { googleUid: uid },
+        emailClause,
+      ].filter(Boolean);
+
+      if (preferAdmin) {
+        user = await Admin.findOne({
+          where: { [Op.or]: uidOrEmail },
+        });
+        if (user) {
+          userType = "admin";
+        }
+      }
+
+      // Sequential checks to avoid overloading DB with 3 queries per request
       if (!user) {
-        // Check CA
-        user = await CA.findOne({
+        user = await User.findOne({
           where: {
-            [require("sequelize").Op.or]: [
+            [Op.or]: [
               { googleUid: uid },
               { phoneUid: uid },
               emailClause,
             ].filter(Boolean),
           },
         });
-
         if (user) {
-          userType = "ca";
-        } else {
-          // Check Admin
-          user = await Admin.findOne({
-            where: {
-              [require("sequelize").Op.or]: [
-                { googleUid: uid },
-                emailClause,
-              ].filter(Boolean),
-            },
-          });
-
-          if (user) {
-            userType = "admin";
-          }
+          userType = "user";
         }
       }
+
+      if (!user) {
+        user = await CA.findOne({
+          where: {
+            [Op.or]: [
+              { googleUid: uid },
+              { phoneUid: uid },
+              emailClause,
+            ].filter(Boolean),
+          },
+        });
+        if (user) {
+          userType = "ca";
+        }
+      }
+
+      if (!user) {
+        user = await Admin.findOne({
+          where: { [Op.or]: uidOrEmail },
+        });
+        if (user) {
+          userType = "admin";
+        }
+      }
+
+      logger.info("Resolved auth identity", {
+        email,
+        preferAdmin,
+        userType,
+        userId: user?.id,
+      });
 
       // Handle status checks and updates
       if (user) {

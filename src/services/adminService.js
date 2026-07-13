@@ -797,7 +797,7 @@ class AdminService {
             literal(`(
               SELECT COUNT(*)
               FROM service_requests
-              WHERE service_requests.caId = CA.id
+              WHERE service_requests."caId" = "CA"."id"
               AND service_requests.status = 'completed'
             )`),
             "completedFilings",
@@ -806,7 +806,7 @@ class AdminService {
             literal(`(
               SELECT AVG(rating)
               FROM reviews
-              WHERE reviews.caId = CA.id
+              WHERE reviews."caId" = "CA"."id"
             )`),
             "avgRating",
           ],
@@ -814,9 +814,9 @@ class AdminService {
             literal(`(
               SELECT SUM(amount)
               FROM payments
-              WHERE payments.payeeId = CA.id
+              WHERE payments."payeeId" = "CA"."id"
               AND payments.status = 'completed'
-              AND payments.createdAt >= '${dateFilter.toISOString()}'
+              AND payments."createdAt" >= '${dateFilter.toISOString()}'
             )`),
             "periodRevenue",
           ],
