@@ -67,7 +67,7 @@ class PaymentController {
       // Check if user has access to this payment
       const { Payment } = require("../../models");
       const payment = await Payment.findByPk(paymentId);
-      if (payment && payment.payerId !== userId && req.user.role !== "admin") {
+      if (payment && payment.payerId !== userId && req.user.type !== "admin") {
         return res.status(403).json({
           success: false,
           message: "Access denied",
@@ -206,7 +206,11 @@ class PaymentController {
   async handleWebhook(req, res) {
     try {
       const signature = req.headers["x-razorpay-signature"];
-      const payload = JSON.stringify(req.body);
+      // Prefer raw body captured before JSON parsing for HMAC verification
+      const payload =
+        typeof req.rawBody === "string"
+          ? req.rawBody
+          : JSON.stringify(req.body);
 
       // Verify webhook signature
       const isValid = await paymentService.verifyWebhook(signature, payload);
@@ -266,7 +270,8 @@ class PaymentController {
       });
 
       // Update service request payment status
-      const paymentStatus = payment.type === "booking" ? "token-paid" : "paid";
+      const paymentStatus =
+        payment.paymentType === "booking_fee" ? "token-paid" : "paid";
       await ServiceRequest.update(
         { paymentStatus },
         { where: { id: payment.serviceRequestId } }
@@ -346,7 +351,7 @@ class PaymentController {
    */
   async getPaymentAnalytics(req, res) {
     try {
-      if (req.user.role !== "admin") {
+      if (req.user.type !== "admin") {
         return res.status(403).json({
           success: false,
           message: "Access denied",

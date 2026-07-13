@@ -68,6 +68,10 @@ class PaymentService {
         throw new Error("No CA assigned to this request");
       }
 
+      // Booking fee: ₹999 + 18% GST (computed before reuse paths that return these fields)
+      const baseBookingFee = this.bookingFee;
+      const gstAmount = baseBookingFee * this.gstRate;
+
       // Check if booking payment already exists
       const existingPayment = await Payment.findOne({
         where: {
@@ -164,9 +168,6 @@ class PaymentService {
         }
       }
 
-      // Booking fee: ₹999 + 18% GST
-      const baseBookingFee = this.bookingFee;
-      const gstAmount = baseBookingFee * this.gstRate;
       let amount = baseBookingFee + gstAmount; // Total: 999 + GST
       let discountAmount = 0;
       let couponId = null;
@@ -708,12 +709,17 @@ class PaymentService {
         return true; // Skip verification in mock mode
       }
 
-      // If webhook secret is not configured, log warning but allow (for development)
       if (!this.webhookSecret) {
+        if (process.env.NODE_ENV === "production") {
+          logger.error(
+            "RAZORPAY_WEBHOOK_SECRET not configured — rejecting webhook in production",
+          );
+          return false;
+        }
         logger.warn(
           "RAZORPAY_WEBHOOK_SECRET not configured. Webhook verification skipped.",
         );
-        return true; // Allow in development, but should be configured for production
+        return true;
       }
 
       const expectedSignature = crypto

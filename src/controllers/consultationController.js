@@ -200,7 +200,7 @@ class ConsultationController {
     } catch (error) {
       logger.error("Error in getConsultationDocuments:", error);
 
-      if (error.message.includes("Access denied")) {
+      if (error.message?.includes("Access denied")) {
         return res.status(403).json({
           success: false,
           message: error.message,

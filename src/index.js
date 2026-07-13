@@ -9,9 +9,14 @@ const logger = require("./config/logger");
 process.on("unhandledRejection", (reason, promise) => {
   console.error("❌ UNHANDLED REJECTION:", reason);
   logger.error("Unhandled Rejection", {
-    reason: reason.message || reason,
-    stack: reason.stack,
+    reason: reason?.message || reason,
+    stack: reason?.stack,
   });
+
+  // In production, exit so the orchestrator can replace a corrupted process
+  if (process.env.NODE_ENV === "production") {
+    process.exit(1);
+  }
 });
 
 process.on("uncaughtException", (error) => {
@@ -30,10 +35,13 @@ const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 
-// 5. Service imports (The likely hang point)
-const webSocketService = require("./websocket/chatService");
+// Trust reverse proxies (ALB / nginx) so req.ip and rate limits are correct
+app.set("trust proxy", 1);
 
+// 5. Service imports
+const webSocketService = require("./websocket/chatService");
 const notificationService = require("./services/notificationService");
+const { sequelize } = require("../models");
 
 // 6. Middleware imports
 const {
@@ -74,8 +82,17 @@ app.use(corsSecurityHeaders);
 app.use(handlePreflightOptions);
 app.use(dynamicCors);
 
-// Request parsing
-app.use(express.json({ limit: "10mb" }));
+// Request parsing — capture raw body for Razorpay HMAC on the webhook path
+app.use(
+  express.json({
+    limit: "10mb",
+    verify: (req, res, buf) => {
+      if (req.originalUrl?.startsWith("/api/payments/webhook")) {
+        req.rawBody = buf.toString("utf8");
+      }
+    },
+  }),
+);
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use("/uploads", express.static("uploads"));
 
@@ -111,13 +128,25 @@ app.use("/api/coupons", couponRoutes);
 app.use("/api/masters", masterRoutes);
 app.use("/api/inquiry", inquiryRoutes);
 
-// Health check
-const healthCheck = (req, res) => {
-  res.json({
+// Health check — include DB so load balancers do not route to a broken task
+const healthCheck = async (req, res) => {
+  const payload = {
     status: "OK",
     timestamp: new Date().toISOString(),
     service: "EaseTax Backend API",
-  });
+    database: "unknown",
+  };
+
+  try {
+    await sequelize.query("SELECT 1");
+    payload.database = "up";
+    return res.json(payload);
+  } catch (error) {
+    payload.status = "DEGRADED";
+    payload.database = "down";
+    logger.error("Health check DB ping failed", { error: error.message });
+    return res.status(503).json(payload);
+  }
 };
 
 app.get("/health", healthCheck);
@@ -155,28 +184,71 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Start server
-server.listen(PORT, async () => {
-  console.log(`🚀 SERVER RUNNING on http://localhost:${PORT}`);
-  logger.info(`Server started on port ${PORT}`);
+async function connectDatabase(retries = 5, delayMs = 2000) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      await sequelize.authenticate();
+      logger.info("Database connection established");
+      console.log("✅ Database connection established");
+      return;
+    } catch (error) {
+      logger.error(`Database connect attempt ${attempt}/${retries} failed`, {
+        error: error.message,
+      });
+      console.error(
+        `❌ Database connect attempt ${attempt}/${retries}: ${error.message}`,
+      );
+      if (attempt === retries) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+}
 
-  // Initialize WebSocket
-  logger.info("WebSocket service initialized");
-});
-
-// Graceful shutdown
-process.on("SIGTERM", () => {
-  logger.info("SIGTERM signal received: closing HTTP server");
-  server.close(() => {
-    logger.info("HTTP server closed");
-    process.exit(0);
+function shutdown(signal) {
+  logger.info(`${signal} received: closing HTTP server`);
+  server.close(async () => {
+    try {
+      if (io) {
+        await new Promise((resolve) => io.close(resolve));
+      }
+      await sequelize.close();
+      logger.info("HTTP server and database connections closed");
+      process.exit(0);
+    } catch (error) {
+      logger.error("Error during graceful shutdown", {
+        error: error.message,
+      });
+      process.exit(1);
+    }
   });
+
+  // Force exit if connections hang
+  setTimeout(() => {
+    logger.error("Forced shutdown after timeout");
+    process.exit(1);
+  }, 10000).unref();
+}
+
+async function start() {
+  await connectDatabase();
+
+  server.listen(PORT, () => {
+    console.log(`🚀 SERVER RUNNING on http://localhost:${PORT}`);
+    logger.info(`Server started on port ${PORT}`);
+    logger.info("WebSocket service initialized");
+  });
+}
+
+start().catch((error) => {
+  console.error("❌ Failed to start server:", error);
+  logger.error("Failed to start server", {
+    error: error.message,
+    stack: error.stack,
+  });
+  process.exit(1);
 });
 
-process.on("SIGINT", () => {
-  logger.info("SIGINT signal received: closing HTTP server");
-  server.close(() => {
-    logger.info("HTTP server closed");
-    process.exit(0);
-  });
-});
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));

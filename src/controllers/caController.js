@@ -153,7 +153,7 @@ class CAController {
       });
     } catch (error) {
       logger.error("Error in submitReview:", error);
-      res.status(error.message.includes("Unauthorized") ? 403 : 500).json({
+      res.status(error.message?.includes("Unauthorized") ? 403 : 500).json({
         success: false,
         message: error.message || "Failed to submit review",
       });

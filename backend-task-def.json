@@ -2,8 +2,8 @@
   "family": "ease-tax-backend",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
-  "cpu": "256",
-  "memory": "512",
+  "cpu": "512",
+  "memory": "1024",
   "executionRoleArn": "arn:aws:iam::821776167610:role/ecsTaskExecutionRole-ease-tax-backend",
   "containerDefinitions": [
     {
@@ -17,7 +17,10 @@
         }
       ],
       "healthCheck": {
-        "command": ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1"],
+        "command": [
+          "CMD-SHELL",
+          "node -e \"require('http').get('http://localhost:3000/health', (r) => { let d=''; r.on('data',c=>d+=c); r.on('end',()=>process.exit(r.statusCode===200?0:1)); }).on('error',()=>process.exit(1))\""
+        ],
         "interval": 30,
         "timeout": 5,
         "retries": 3,
@@ -25,7 +28,8 @@
       },
       "environment": [
         { "name": "NODE_ENV", "value": "production" },
-        { "name": "PORT", "value": "3000" }
+        { "name": "PORT", "value": "3000" },
+        { "name": "DB_SSL", "value": "true" }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",
@@ -47,7 +51,10 @@
         }
       ],
       "healthCheck": {
-        "command": ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost/nginx-health || exit 1"],
+        "command": [
+          "CMD-SHELL",
+          "wget --no-verbose --tries=1 --spider http://localhost/nginx-health || exit 1"
+        ],
         "interval": 30,
         "timeout": 5,
         "retries": 3,

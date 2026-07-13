@@ -388,7 +388,8 @@ class NotificationService {
         return;
       }
 
-      const roomName = `${recipientType}_${recipientId}`;
+      // Must match rooms joined in chatService (user:<id> / ca:<id>)
+      const roomName = `${recipientType}:${recipientId}`;
 
       this.socketio.to(roomName).emit("notification", {
         id: notification.id,

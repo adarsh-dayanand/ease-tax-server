@@ -234,7 +234,7 @@ class DocumentController {
 
       if (
         error.message === "Access denied" ||
-        error.message.includes("Access denied")
+        error.message?.includes("Access denied")
       ) {
         return res.status(403).json({
           success: false,
@@ -331,8 +331,8 @@ class DocumentController {
 
       if (
         error.message === "Access denied" ||
-        error.message.includes("Access denied") ||
-        error.message.includes("permission")
+        error.message?.includes("Access denied") ||
+        error.message?.includes("permission")
       ) {
         return res.status(403).json({
           success: false,

@@ -1,5 +1,5 @@
 const { Server } = require("socket.io");
-const jwt = require("jsonwebtoken");
+const { Op } = require("sequelize");
 const firebaseConfig = require("../config/firebase");
 const { Message, ServiceRequest, User, CA } = require("../../models");
 const logger = require("../config/logger");
@@ -7,28 +7,45 @@ const logger = require("../config/logger");
 class WebSocketService {
   constructor() {
     this.io = null;
-    this.connectedUsers = new Map(); // userId -> socketId
+    this.connectedUsers = new Map(); // userId -> Set of socketIds
     this.userRooms = new Map(); // userId -> Set of roomIds
+  }
+
+  getAllowedOrigins() {
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:5173";
+    const websocketOrigin = process.env.WEBSOCKET_CORS_ORIGIN || frontendUrl;
+
+    return [
+      frontendUrl,
+      websocketOrigin,
+      "http://localhost:3000",
+      "http://localhost:5173",
+      "http://127.0.0.1:5173",
+      "http://localhost:3001",
+      "https://easetax.co.in",
+      "https://www.easetax.co.in",
+      "https://app.easetax.co.in",
+      "https://service.easetax.co.in",
+      "http://easetax.co.in",
+      "http://www.easetax.co.in",
+      "http://app.easetax.co.in",
+      "http://service.easetax.co.in",
+    ].filter(Boolean);
   }
 
   /**
    * Initialize WebSocket server
    */
   initialize(server) {
-    // Allow multiple origins for development
-    const allowedOrigins = [
-      process.env.FRONTEND_URL,
-      "http://localhost:3000",
-      "http://localhost:5173", // Vite dev server
-      "http://127.0.0.1:5173",
-      "http://localhost:3001", // Alternative dev port
-    ].filter(Boolean); // Remove falsy values
+    const allowedOrigins = this.getAllowedOrigins();
+    const isDevelopment = process.env.NODE_ENV === "development";
 
     this.io = new Server(server, {
       cors: {
         origin: function (origin, callback) {
           // Allow requests with no origin (mobile apps, etc.)
           if (!origin) return callback(null, true);
+          if (isDevelopment) return callback(null, true);
 
           if (allowedOrigins.includes(origin)) {
             return callback(null, true);
@@ -74,12 +91,22 @@ class WebSocketService {
           email,
         });
 
-        // Find user in database
-        let user = await User.findOne({ where: { googleUid: uid } });
+        const identityClause = [
+          { googleUid: uid },
+          { phoneUid: uid },
+          email ? { email: email.toLowerCase().trim() } : null,
+        ].filter(Boolean);
+
+        // Match HTTP auth: googleUid, phoneUid, or email
+        let user = await User.findOne({
+          where: { [Op.or]: identityClause },
+        });
         let userType = "user";
 
         if (!user) {
-          user = await CA.findOne({ where: { googleUid: uid } });
+          user = await CA.findOne({
+            where: { [Op.or]: identityClause },
+          });
           if (user) {
             userType = "ca";
           }
@@ -130,11 +157,19 @@ class WebSocketService {
 
     logger.info(`User connected: ${userId} (${userType})`);
 
-    // Store connection
-    this.connectedUsers.set(userId, socket.id);
+    // Track multiple tabs/devices per user
+    if (!this.connectedUsers.has(userId)) {
+      this.connectedUsers.set(userId, new Set());
+    }
+    this.connectedUsers.get(userId).add(socket.id);
 
-    // Join user to their personal room
+    // Personal rooms must match notificationService room naming
     socket.join(`user:${userId}`);
+    if (userType === "ca") {
+      socket.join(`ca:${userId}`);
+    } else if (userType === "admin") {
+      socket.join(`admin:${userId}`);
+    }
 
     // Handle joining service request rooms
     socket.on("join_service_request", async (data) => {
@@ -533,12 +568,15 @@ class WebSocketService {
    */
   handleDisconnection(socket) {
     const userId = socket.userId;
+    const sockets = this.connectedUsers.get(userId);
 
-    // Remove from connected users
-    this.connectedUsers.delete(userId);
-
-    // Clean up user rooms
-    this.userRooms.delete(userId);
+    if (sockets) {
+      sockets.delete(socket.id);
+      if (sockets.size === 0) {
+        this.connectedUsers.delete(userId);
+        this.userRooms.delete(userId);
+      }
+    }
 
     logger.info(`User disconnected: ${userId}`);
   }
@@ -625,12 +663,15 @@ class WebSocketService {
    * Send message to specific user
    */
   sendToUser(userId, event, data) {
-    const socketId = this.connectedUsers.get(userId);
-    if (socketId) {
-      this.io.to(socketId).emit(event, data);
-      return true;
+    const sockets = this.connectedUsers.get(userId);
+    if (!sockets || sockets.size === 0) {
+      return false;
     }
-    return false;
+
+    for (const socketId of sockets) {
+      this.io.to(socketId).emit(event, data);
+    }
+    return true;
   }
 
   /**
