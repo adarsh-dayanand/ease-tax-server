@@ -11,27 +11,43 @@ class CAController {
       const {
         location,
         specialization,
+        searchQuery,
+        search,
+        q,
         minRating,
+        minPrice,
         maxPrice,
-        availability,
+        minExperience,
+        maxExperience,
+        verifiedOnly,
         sortBy,
         page = 1,
-        limit = 10,
+        limit = 50,
       } = req.query;
 
       const filters = {
         location,
         specialization,
+        searchQuery: searchQuery || search || q,
         minRating,
+        minPrice,
         maxPrice,
-        availability,
+        minExperience,
+        maxExperience,
+        verifiedOnly,
         sortBy,
       };
 
-      // Remove undefined values
-      Object.keys(filters).forEach(
-        (key) => filters[key] === undefined && delete filters[key],
-      );
+      // Remove undefined / empty values
+      Object.keys(filters).forEach((key) => {
+        if (
+          filters[key] === undefined ||
+          filters[key] === "" ||
+          filters[key] === null
+        ) {
+          delete filters[key];
+        }
+      });
 
       const result = await caService.searchCAs(
         filters,

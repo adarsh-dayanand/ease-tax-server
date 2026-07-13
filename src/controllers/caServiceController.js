@@ -359,48 +359,21 @@ class CAServiceController {
         });
       }
 
-      // Find the Service from master Services table by category and/or name
-      let service = null;
-
       // Map frontend display name to backend enum value
-      // Currently using old enum values that exist in the database
       const serviceCategoryEnum = serviceData.serviceCategory
         ? mapDisplayNameToEnum(serviceData.serviceCategory)
-        : "tax_filing"; // Default to tax_filing instead of "other" which might not exist
+        : "tax_filing";
 
-      if (serviceData.serviceCategory && serviceData.serviceName) {
-        // Try to find by category and name first
-        service = await Service.findOne({
-          where: {
-            category: serviceCategoryEnum,
-            name: serviceData.serviceName,
-            isActive: true,
-          },
-        });
-      }
+      // Exact name+category match only — never reuse an unrelated master Service
+      // by category/name alone (that caused shared updates across CA services).
+      let service = await Service.findOne({
+        where: {
+          category: serviceCategoryEnum,
+          name: serviceData.serviceName,
+          isActive: true,
+        },
+      });
 
-      // If not found, try by category only
-      if (!service && serviceData.serviceCategory) {
-        service = await Service.findOne({
-          where: {
-            category: serviceCategoryEnum,
-            isActive: true,
-          },
-        });
-      }
-
-      // If still not found, try by name only
-      if (!service && serviceData.serviceName) {
-        service = await Service.findOne({
-          where: {
-            name: serviceData.serviceName,
-            isActive: true,
-          },
-        });
-      }
-
-      // If still not found, create a new Service in the master table
-      // This allows CAs to offer custom services
       if (!service) {
         try {
           service = await Service.create({
@@ -419,32 +392,17 @@ class CAServiceController {
         } catch (createError) {
           logger.error("Error creating Service:", createError);
 
-          // If creation fails due to enum issue, try to find any service in the category as fallback
-          try {
-            service = await Service.findOne({
-              where: {
-                category: serviceCategoryEnum,
-                isActive: true,
-              },
-            });
-          } catch (findError) {
-            logger.error("Error finding service by category:", findError);
-          }
-
-          if (!service) {
-            // Check if it's an enum error
-            if (createError.message && createError.message.includes("enum")) {
-              return res.status(400).json({
-                success: false,
-                message: `Invalid service category. The category '${serviceCategoryEnum}' is not valid. Please use a valid category from the dropdown.`,
-              });
-            }
-
+          if (createError.message && createError.message.includes("enum")) {
             return res.status(400).json({
               success: false,
-              message: `Unable to create or find service: ${createError.message || "Unknown error"}`,
+              message: `Invalid service category. The category '${serviceCategoryEnum}' is not valid. Please use a valid category from the dropdown.`,
             });
           }
+
+          return res.status(400).json({
+            success: false,
+            message: `Unable to create or find service: ${createError.message || "Unknown error"}`,
+          });
         }
       }
 
@@ -453,7 +411,7 @@ class CAServiceController {
         serviceId: service.id,
         customPrice: parseFloat(serviceData.price) || 0,
         currency: serviceData.currency || "INR",
-        customDuration: serviceData.duration || null, // Duration in minutes or days depending on frontend
+        customDuration: serviceData.duration || null,
         notes: serviceData.serviceDescription || null,
         isActive: true,
       };
@@ -474,6 +432,90 @@ class CAServiceController {
       res.status(500).json({
         success: false,
         message: error.message || "Failed to create service",
+      });
+    }
+  }
+
+  /**
+   * Update service for a specific CA
+   * PUT /ca/:caId/services/:serviceId (authenticated endpoint)
+   */
+  async updateServiceForCA(req, res) {
+    try {
+      const { caId, serviceId } = req.params;
+      const serviceData = req.body;
+
+      if (req.user.id !== caId || req.user.type !== "ca") {
+        return res.status(403).json({
+          success: false,
+          message: "You can only update services for your own CA account",
+        });
+      }
+
+      const caService =
+        await caServiceManagementService.updateConfiguredCAService(
+          caId,
+          serviceId,
+          serviceData,
+        );
+
+      res.json({
+        success: true,
+        data: {
+          id: caService.id,
+          serviceName: caService.serviceName,
+          serviceCategory: caService.serviceCategory,
+          serviceDescription: caService.serviceDescription,
+          price: caService.customPrice,
+          currency: caService.currency,
+          duration: caService.customDuration,
+          experienceLevel: caService.experienceLevel,
+          notes: caService.notes,
+        },
+        message: "Service updated successfully",
+      });
+    } catch (error) {
+      logger.error("Error in updateServiceForCA:", error);
+      const status =
+        error.message === "Service not found"
+          ? 404
+          : error.message?.includes("already offer")
+            ? 409
+            : 500;
+      res.status(status).json({
+        success: false,
+        message: error.message || "Failed to update service",
+      });
+    }
+  }
+
+  /**
+   * Delete service for a specific CA
+   * DELETE /ca/:caId/services/:serviceId (authenticated endpoint)
+   */
+  async deleteServiceForCA(req, res) {
+    try {
+      const { caId, serviceId } = req.params;
+
+      if (req.user.id !== caId || req.user.type !== "ca") {
+        return res.status(403).json({
+          success: false,
+          message: "You can only delete services for your own CA account",
+        });
+      }
+
+      await caServiceManagementService.deleteCAService(caId, serviceId);
+
+      res.json({
+        success: true,
+        message: "Service deleted successfully",
+      });
+    } catch (error) {
+      logger.error("Error in deleteServiceForCA:", error);
+      const status = error.message === "Service not found" ? 404 : 500;
+      res.status(status).json({
+        success: false,
+        message: error.message || "Failed to delete service",
       });
     }
   }

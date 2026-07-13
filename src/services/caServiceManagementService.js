@@ -109,7 +109,8 @@ class CAServiceManagementService {
         serviceId: service.serviceId,
         serviceName: service.service?.name,
         serviceCategory: service.service?.category,
-        serviceDescription: service.service?.description,
+        // Prefer CA-specific notes so one CA's copy does not leak via master Service
+        serviceDescription: service.notes || service.service?.description,
         serviceRequirements: service.service?.requirements || [],
         serviceDeliverables: service.service?.deliverables || [],
         customPrice: service.customPrice,
@@ -300,6 +301,188 @@ class CAServiceManagementService {
       };
     } catch (error) {
       logger.error("Error upserting CA service:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Map frontend display name / enum to Services.category enum value
+   */
+  mapServiceCategory(displayNameOrEnum) {
+    if (!displayNameOrEnum) return null;
+    const mapping = {
+      "ITR Filing": "tax_filing",
+      "GST Registration": "gst_registration",
+      "GST Filing": "gst_return_filing",
+      "Company Registration": "company_registration",
+      "Trademark Registration": "trademark_registration",
+      "Tax Consultation": "tax_consultation",
+      "Audit Services": "audit_services",
+      "Compliance Check": "compliance_check",
+      "Financial Consultation": "financial_consultation",
+      "Other Services": "other",
+    };
+    return mapping[displayNameOrEnum] || displayNameOrEnum;
+  }
+
+  /**
+   * Find an exact master Service by name+category, or create a dedicated one.
+   * Never mutates an existing shared master Service.
+   */
+  async findOrCreateDedicatedService({ name, category, description }) {
+    const existing = await Service.findOne({
+      where: {
+        name,
+        category,
+        isActive: true,
+      },
+    });
+
+    if (existing) {
+      return existing;
+    }
+
+    return Service.create({
+      name,
+      description: description || `Service: ${name}`,
+      category,
+      isActive: true,
+      requirements: [],
+      deliverables: [],
+    });
+  }
+
+  /**
+   * Update an existing CA service association by CAService id.
+   * Only mutates this CAService row (and may re-point serviceId).
+   * Never updates the shared master Services table in place.
+   */
+  async updateConfiguredCAService(caId, caServiceId, serviceData) {
+    try {
+      const caService = await CAService.findOne({
+        where: { id: caServiceId, caId },
+        include: [
+          {
+            model: Service,
+            as: "service",
+            attributes: [
+              "id",
+              "name",
+              "description",
+              "category",
+              "requirements",
+              "deliverables",
+            ],
+          },
+        ],
+      });
+
+      if (!caService) {
+        throw new Error("Service not found");
+      }
+
+      const updates = {};
+
+      if (serviceData.price !== undefined && serviceData.price !== null) {
+        updates.customPrice = parseFloat(serviceData.price) || 0;
+      }
+      if (serviceData.currency !== undefined) {
+        updates.currency = serviceData.currency || "INR";
+      }
+      if (serviceData.duration !== undefined) {
+        updates.customDuration = serviceData.duration || null;
+      }
+      if (serviceData.serviceDescription !== undefined) {
+        updates.notes = serviceData.serviceDescription || null;
+      }
+      if (serviceData.experienceLevel !== undefined) {
+        updates.experienceLevel = serviceData.experienceLevel;
+      }
+      if (serviceData.isActive !== undefined) {
+        updates.isActive = serviceData.isActive;
+      }
+
+      const nextName =
+        serviceData.serviceName?.trim() || caService.service?.name;
+      const nextCategory = this.mapServiceCategory(
+        serviceData.serviceCategory || caService.service?.category,
+      );
+      const nameChanged =
+        Boolean(serviceData.serviceName) &&
+        serviceData.serviceName.trim() !== caService.service?.name;
+      const categoryChanged =
+        Boolean(serviceData.serviceCategory) &&
+        nextCategory !== caService.service?.category;
+
+      if ((nameChanged || categoryChanged) && nextName && nextCategory) {
+        const targetService = await this.findOrCreateDedicatedService({
+          name: nextName,
+          category: nextCategory,
+          description:
+            serviceData.serviceDescription ||
+            caService.notes ||
+            caService.service?.description,
+        });
+
+        if (targetService.id !== caService.serviceId) {
+          const conflict = await CAService.findOne({
+            where: {
+              caId,
+              serviceId: targetService.id,
+              id: { [Op.ne]: caServiceId },
+            },
+          });
+
+          if (conflict) {
+            throw new Error(
+              "You already offer a service linked to this name and category",
+            );
+          }
+
+          updates.serviceId = targetService.id;
+        }
+      }
+
+      if (Object.keys(updates).length > 0) {
+        await caService.update(updates);
+      }
+
+      await caService.reload({
+        include: [
+          {
+            model: Service,
+            as: "service",
+            attributes: [
+              "id",
+              "name",
+              "description",
+              "category",
+              "requirements",
+              "deliverables",
+            ],
+          },
+        ],
+      });
+
+      return {
+        id: caService.id,
+        serviceId: caService.serviceId,
+        serviceName: caService.service?.name,
+        serviceCategory: caService.service?.category,
+        serviceDescription: caService.notes || caService.service?.description,
+        serviceRequirements: caService.service?.requirements || [],
+        serviceDeliverables: caService.service?.deliverables || [],
+        customPrice: caService.customPrice,
+        currency: caService.currency,
+        customDuration: caService.customDuration,
+        experienceLevel: caService.experienceLevel,
+        notes: caService.notes,
+        isActive: caService.isActive,
+        createdAt: caService.createdAt,
+        updatedAt: caService.updatedAt,
+      };
+    } catch (error) {
+      logger.error("Error updating configured CA service:", error);
       throw error;
     }
   }

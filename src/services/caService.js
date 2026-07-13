@@ -88,69 +88,176 @@ class CAService {
   }
 
   /**
+   * Parse display price like "₹1,999" into a number (NaN if contact-only)
+   * @private
+   */
+  _parsePrice(price) {
+    if (!price || typeof price !== "string") return NaN;
+    return parseInt(price.replace(/[^\d]/g, ""), 10);
+  }
+
+  /**
+   * Parse "N years" experience string
+   * @private
+   */
+  _parseExperienceYears(experience) {
+    if (typeof experience === "number") return experience;
+    if (!experience) return 0;
+    return parseInt(String(experience).replace(/[^\d]/g, ""), 10) || 0;
+  }
+
+  /**
    * Search and filter CAs
    */
-  async searchCAs(filters = {}, page = 1, limit = 10) {
+  async searchCAs(filters = {}, page = 1, limit = 50) {
     try {
-      const offset = (page - 1) * limit;
-      const whereClause = {};
+      const andConditions = [];
 
       if (filters.location) {
-        whereClause.location = { [Op.iLike]: `%${filters.location}%` };
-      }
-
-      // Add other filters like experience range if present
-      if (filters.minExperience !== undefined) {
-        whereClause.experienceYears = { [Op.gte]: filters.minExperience };
-      }
-
-      // Sorting
-      let order = [["experienceYears", "DESC"]];
-      if (filters.sortBy === "experience") {
-        order = [["experienceYears", "DESC"]];
-      } else if (filters.sortBy === "rating") {
-        // Sorting by rating usually requires subqueries or pre-calculation,
-        // using experienceYears as fallback for now
-        order = [["experienceYears", "DESC"]];
-      }
-
-      const result = await this._getCAListItems(
-        whereClause,
-        limit,
-        offset,
-        order,
-      );
-
-      // Post-filtering for specialization since it's based on joined data
-      let data = result.data;
-      if (filters.specialization) {
-        data = data.filter((ca) =>
-          ca.specialization
-            .toLowerCase()
-            .includes(filters.specialization.toLowerCase()),
-        );
-      }
-
-      // Post-filtering for rating
-      if (filters.minRating) {
-        data = data.filter((ca) => ca.rating >= parseFloat(filters.minRating));
-      }
-
-      // Post-filtering for price
-      if (filters.maxPrice) {
-        data = data.filter((ca) => {
-          const priceValue = parseInt(ca.price.replace(/[^\d]/g, ""));
-          return isNaN(priceValue) || priceValue <= parseInt(filters.maxPrice);
+        andConditions.push({
+          location: { [Op.iLike]: `%${filters.location}%` },
         });
       }
 
+      const searchQuery = filters.searchQuery || filters.search || filters.q;
+      if (searchQuery) {
+        andConditions.push({
+          [Op.or]: [
+            { name: { [Op.iLike]: `%${searchQuery}%` } },
+            { location: { [Op.iLike]: `%${searchQuery}%` } },
+            { bio: { [Op.iLike]: `%${searchQuery}%` } },
+          ],
+        });
+      }
+
+      const experienceClause = {};
+      if (
+        filters.minExperience !== undefined &&
+        filters.minExperience !== ""
+      ) {
+        experienceClause[Op.gte] = parseInt(filters.minExperience, 10);
+      }
+      if (
+        filters.maxExperience !== undefined &&
+        filters.maxExperience !== ""
+      ) {
+        experienceClause[Op.lte] = parseInt(filters.maxExperience, 10);
+      }
+      if (Object.keys(experienceClause).length > 0) {
+        andConditions.push({ experienceYears: experienceClause });
+      }
+
+      if (
+        filters.verifiedOnly === true ||
+        filters.verifiedOnly === "true"
+      ) {
+        andConditions.push({ phoneVerified: true });
+      }
+
+      const whereClause =
+        andConditions.length > 0 ? { [Op.and]: andConditions } : {};
+
+      // Fetch a wide candidate set so post-filters (service names, rating, price) stay accurate
+      const result = await this._getCAListItems(
+        whereClause,
+        500,
+        0,
+        [["experienceYears", "DESC"]],
+      );
+
+      let data = result.data;
+
+      // Specialization: support comma-separated list (OR match)
+      if (filters.specialization) {
+        const specs = String(filters.specialization)
+          .split(",")
+          .map((s) => s.trim().toLowerCase())
+          .filter(Boolean);
+
+        if (specs.length > 0) {
+          data = data.filter((ca) => {
+            const haystack = (ca.specialization || "").toLowerCase();
+            return specs.some((spec) => haystack.includes(spec));
+          });
+        }
+      }
+
+      if (filters.minRating) {
+        const minRating = parseFloat(filters.minRating);
+        data = data.filter((ca) => ca.rating >= minRating);
+      }
+
+      if (filters.minPrice !== undefined && filters.minPrice !== "") {
+        const minPrice = parseInt(filters.minPrice, 10);
+        data = data.filter((ca) => {
+          const priceValue = this._parsePrice(ca.price);
+          return !isNaN(priceValue) && priceValue >= minPrice;
+        });
+      }
+
+      if (filters.maxPrice !== undefined && filters.maxPrice !== "") {
+        const maxPrice = parseInt(filters.maxPrice, 10);
+        data = data.filter((ca) => {
+          const priceValue = this._parsePrice(ca.price);
+          // Keep "Contact for Price" when only a max is set
+          return isNaN(priceValue) || priceValue <= maxPrice;
+        });
+      }
+
+      switch (filters.sortBy) {
+        case "rating":
+          data.sort((a, b) => b.rating - a.rating);
+          break;
+        case "experience":
+          data.sort(
+            (a, b) =>
+              this._parseExperienceYears(b.experience) -
+              this._parseExperienceYears(a.experience),
+          );
+          break;
+        case "price-low":
+          data.sort((a, b) => {
+            const pa = this._parsePrice(a.price);
+            const pb = this._parsePrice(b.price);
+            if (isNaN(pa) && isNaN(pb)) return 0;
+            if (isNaN(pa)) return 1;
+            if (isNaN(pb)) return -1;
+            return pa - pb;
+          });
+          break;
+        case "price-high":
+          data.sort((a, b) => {
+            const pa = this._parsePrice(a.price);
+            const pb = this._parsePrice(b.price);
+            if (isNaN(pa) && isNaN(pb)) return 0;
+            if (isNaN(pa)) return 1;
+            if (isNaN(pb)) return -1;
+            return pb - pa;
+          });
+          break;
+        case "relevance":
+        default:
+          // Prefer higher rating, then more reviews
+          data.sort((a, b) => {
+            if (b.rating !== a.rating) return b.rating - a.rating;
+            return (b.reviewCount || 0) - (a.reviewCount || 0);
+          });
+          break;
+      }
+
+      const total = data.length;
+      const safeLimit = Math.max(1, parseInt(limit, 10) || 50);
+      const safePage = Math.max(1, parseInt(page, 10) || 1);
+      const offset = (safePage - 1) * safeLimit;
+      const paged = data.slice(offset, offset + safeLimit);
+
       return {
-        data,
+        data: paged,
         pagination: {
-          page,
-          limit,
-          total: result.count,
-          totalPages: Math.ceil(result.count / limit),
+          page: safePage,
+          limit: safeLimit,
+          total,
+          totalPages: Math.ceil(total / safeLimit) || 0,
         },
         filters,
       };

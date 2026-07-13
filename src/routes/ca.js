@@ -37,6 +37,20 @@ router.post(
   caServiceController.createServiceForCA,
 );
 
+// PUT /ca/:caId/services/:serviceId - Update an existing CA service
+router.put(
+  "/:caId/services/:serviceId",
+  rateLimit.apiRateLimit,
+  caServiceController.updateServiceForCA,
+);
+
+// DELETE /ca/:caId/services/:serviceId - Delete a CA service
+router.delete(
+  "/:caId/services/:serviceId",
+  rateLimit.apiRateLimit,
+  caServiceController.deleteServiceForCA,
+);
+
 // CA search and listing
 router.get("/", rateLimit.apiRateLimit, caController.searchCAs);
 
