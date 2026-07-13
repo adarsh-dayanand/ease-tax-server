@@ -60,6 +60,26 @@ router.put(
   adminController.updateCACommission
 );
 
+router.put(
+  "/cas/:caId",
+  rateLimit.apiRateLimit,
+  adminController.updateCA
+);
+
+// Expert types (CA types)
+router.get("/ca-types", rateLimit.apiRateLimit, adminController.getCATypes);
+router.post("/ca-types", rateLimit.apiRateLimit, adminController.createCAType);
+router.put(
+  "/ca-types/:id",
+  rateLimit.apiRateLimit,
+  adminController.updateCAType
+);
+router.delete(
+  "/ca-types/:id",
+  rateLimit.apiRateLimit,
+  adminController.deleteCAType
+);
+
 // User Management
 router.get("/users", rateLimit.apiRateLimit, adminController.getAllUsers);
 

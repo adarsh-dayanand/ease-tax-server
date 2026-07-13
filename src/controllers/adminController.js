@@ -68,7 +68,7 @@ class AdminController {
       const caData = req.body;
 
       // Validate required fields
-      const requiredFields = ["name", "email", "phone"];
+      const requiredFields = ["name", "email", "phone", "caTypeId"];
       const missingFields = requiredFields.filter((field) => !caData[field]);
 
       if (missingFields.length > 0) {
@@ -299,6 +299,116 @@ class AdminController {
       res.status(400).json({
         success: false,
         message: error.message || "Failed to update CA commission",
+      });
+    }
+  }
+
+  /**
+   * Update CA (admin) — e.g. expert type
+   * PUT /admin/cas/:caId
+   */
+  async updateCA(req, res) {
+    try {
+      const { caId } = req.params;
+      const ca = await adminService.updateCA(caId, req.body);
+      res.json({
+        success: true,
+        data: ca,
+        message: "Expert updated successfully",
+      });
+    } catch (error) {
+      logger.error("Error in updateCA:", error);
+      res.status(400).json({
+        success: false,
+        message: error.message || "Failed to update expert",
+      });
+    }
+  }
+
+  /**
+   * List expert types
+   * GET /admin/ca-types
+   */
+  async getCATypes(req, res) {
+    try {
+      const activeOnly =
+        req.query.activeOnly === "true" || req.query.activeOnly === "1";
+      const data = await adminService.getCATypes({ activeOnly });
+      res.json({ success: true, data });
+    } catch (error) {
+      logger.error("Error in getCATypes:", error);
+      res.status(500).json({
+        success: false,
+        message: "Internal server error",
+      });
+    }
+  }
+
+  /**
+   * Create expert type
+   * POST /admin/ca-types
+   */
+  async createCAType(req, res) {
+    try {
+      const data = await adminService.createCAType(req.body || {});
+      res.status(201).json({
+        success: true,
+        data,
+        message: "Expert type created",
+      });
+    } catch (error) {
+      logger.error("Error in createCAType:", error);
+      res.status(400).json({
+        success: false,
+        message: error.message || "Failed to create expert type",
+      });
+    }
+  }
+
+  /**
+   * Update expert type
+   * PUT /admin/ca-types/:id
+   */
+  async updateCAType(req, res) {
+    try {
+      const { id } = req.params;
+      const data = await adminService.updateCAType(id, req.body || {});
+      res.json({
+        success: true,
+        data,
+        message: "Expert type updated",
+      });
+    } catch (error) {
+      logger.error("Error in updateCAType:", error);
+      const status = error.message === "Expert type not found" ? 404 : 400;
+      res.status(status).json({
+        success: false,
+        message: error.message || "Failed to update expert type",
+      });
+    }
+  }
+
+  /**
+   * Delete expert type
+   * DELETE /admin/ca-types/:id
+   */
+  async deleteCAType(req, res) {
+    try {
+      const { id } = req.params;
+      const data = await adminService.deleteCAType(id);
+      res.json({
+        success: true,
+        data,
+        message: "Expert type deleted",
+      });
+    } catch (error) {
+      logger.error("Error in deleteCAType:", error);
+      const status =
+        error.statusCode ||
+        (error.message === "Expert type not found" ? 404 : 400);
+      res.status(status).json({
+        success: false,
+        message: error.message || "Failed to delete expert type",
       });
     }
   }

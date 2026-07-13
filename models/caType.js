@@ -10,9 +10,10 @@ module.exports = (sequelize, DataTypes) => {
         primaryKey: true,
       },
       type: {
-        type: DataTypes.ENUM("ca", "tax-consultant"),
-        defaultValue: "ca",
+        type: DataTypes.STRING,
         allowNull: false,
+        unique: true,
+        comment: "Stable slug e.g. ca, tax-professional, freelancer",
       },
       name: {
         type: DataTypes.STRING,
@@ -22,11 +23,16 @@ module.exports = (sequelize, DataTypes) => {
         type: DataTypes.TEXT,
         allowNull: true,
       },
+      isActive: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
+      },
     },
     {
       tableName: "ca_types",
       timestamps: true,
-    }
+    },
   );
 
   CAType.associate = (models) => {

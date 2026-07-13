@@ -69,6 +69,14 @@ class CAService {
         name: ca.name,
         image: ca.profileImage || ca.image,
         verified: ca.status === "active",
+        caType: ca.caType
+          ? {
+              id: ca.caType.id,
+              type: ca.caType.type,
+              name: ca.caType.name,
+              description: ca.caType.description || null,
+            }
+          : null,
         specialization:
           ca.caServices
             ?.map((cs) => cs.service?.name)
@@ -331,7 +339,14 @@ class CAService {
         bio: ca.bio,
         qualifications: ca.qualifications,
         languages: ca.languages,
-        caType: ca.caType ? { id: ca.caType.id, name: ca.caType.name } : null,
+        caType: ca.caType
+          ? {
+              id: ca.caType.id,
+              type: ca.caType.type,
+              name: ca.caType.name,
+              description: ca.caType.description || null,
+            }
+          : null,
         ratingDistribution,
         services: caServicesResult.map((cs) => ({
           id: cs.service?.id,

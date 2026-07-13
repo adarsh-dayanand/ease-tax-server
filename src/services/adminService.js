@@ -1,6 +1,7 @@
 const {
   User,
   CA,
+  CAType,
   ServiceRequest,
   Payment,
   Review,
@@ -10,7 +11,127 @@ const logger = require("../config/logger");
 const { Op, fn, col, literal } = require("sequelize");
 const bcrypt = require("bcryptjs");
 
+function slugifyType(name) {
+  return String(name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+}
+
+function mapCaType(caType) {
+  if (!caType) return null;
+  return {
+    id: caType.id,
+    type: caType.type,
+    name: caType.name,
+    description: caType.description || null,
+    isActive: caType.isActive !== false,
+  };
+}
+
 class AdminService {
+  /**
+   * List expert types (CA types)
+   */
+  async getCATypes({ activeOnly = false } = {}) {
+    const where = activeOnly ? { isActive: true } : {};
+    const rows = await CAType.findAll({
+      where,
+      order: [["name", "ASC"]],
+    });
+    return rows.map(mapCaType);
+  }
+
+  /**
+   * Create expert type
+   */
+  async createCAType({ name, description, type }) {
+    if (!name || !String(name).trim()) {
+      throw new Error("Name is required");
+    }
+
+    const slug = (type && String(type).trim()) || slugifyType(name);
+    if (!slug) {
+      throw new Error("Could not derive a type slug from name");
+    }
+
+    const existing = await CAType.findOne({ where: { type: slug } });
+    if (existing) {
+      throw new Error(`Type slug "${slug}" already exists`);
+    }
+
+    const created = await CAType.create({
+      type: slug,
+      name: String(name).trim(),
+      description: description ? String(description).trim() : null,
+      isActive: true,
+    });
+    return mapCaType(created);
+  }
+
+  /**
+   * Update expert type (slug immutable)
+   */
+  async updateCAType(id, { name, description, isActive }) {
+    const caType = await CAType.findByPk(id);
+    if (!caType) {
+      throw new Error("Expert type not found");
+    }
+
+    const updates = {};
+    if (name !== undefined) {
+      if (!String(name).trim()) throw new Error("Name cannot be empty");
+      updates.name = String(name).trim();
+    }
+    if (description !== undefined) {
+      updates.description = description ? String(description).trim() : null;
+    }
+    if (isActive !== undefined) {
+      updates.isActive = Boolean(isActive);
+    }
+
+    await caType.update(updates);
+    return mapCaType(caType);
+  }
+
+  /**
+   * Delete expert type only when unused
+   */
+  async deleteCAType(id) {
+    const caType = await CAType.findByPk(id);
+    if (!caType) {
+      throw new Error("Expert type not found");
+    }
+
+    const inUse = await CA.count({ where: { caTypeId: id } });
+    if (inUse > 0) {
+      const err = new Error(
+        `Cannot delete: ${inUse} expert(s) still use this type. Deactivate it instead.`,
+      );
+      err.statusCode = 409;
+      throw err;
+    }
+
+    await caType.destroy();
+    return { id };
+  }
+
+  async assertActiveCAType(caTypeId) {
+    if (!caTypeId) {
+      throw new Error("Expert type is required");
+    }
+    const caType = await CAType.findByPk(caTypeId);
+    if (!caType) {
+      throw new Error("Invalid expert type");
+    }
+    if (!caType.isActive) {
+      throw new Error("Selected expert type is inactive");
+    }
+    return caType;
+  }
+
   /**
    * Get all CAs with filters
    */
@@ -31,6 +152,7 @@ class AdminService {
 
       const { rows, count } = await CA.findAndCountAll({
         where: whereClause,
+        include: [{ model: CAType, as: "caType" }],
         limit,
         offset,
         order: [["createdAt", "DESC"]],
@@ -62,6 +184,8 @@ class AdminService {
         phoneVerified: ca.phoneVerified,
         lastLogin: ca.lastLogin,
         createdAt: ca.createdAt,
+        caTypeId: ca.caTypeId || null,
+        caType: mapCaType(ca.caType),
       }));
 
       return {
@@ -88,6 +212,7 @@ class AdminService {
 
       const { rows, count } = await CA.findAndCountAll({
         where: { status: "pending_registration" },
+        include: [{ model: CAType, as: "caType" }],
         limit,
         offset,
         order: [["createdAt", "ASC"]], // Oldest first for verification queue
@@ -104,6 +229,8 @@ class AdminService {
         daysPending: Math.floor(
           (new Date() - new Date(ca.createdAt)) / (1000 * 60 * 60 * 24),
         ),
+        caTypeId: ca.caTypeId || null,
+        caType: mapCaType(ca.caType),
       }));
 
       return {
@@ -137,6 +264,10 @@ class AdminService {
         commissionPercentage,
       } = caData;
 
+      await this.assertActiveCAType(caTypeId);
+
+      const caType = await CAType.findByPk(caTypeId);
+
       // Check if CA already exists
       const existingCA = await CA.findOne({
         where: {
@@ -162,6 +293,7 @@ class AdminService {
         location,
         caNumber,
         caTypeId,
+        qualifications: caType?.name ? [caType.name] : [],
         commissionPercentage: parseFloat(commissionPercentage),
         phoneVerified: true, // Admin registered CAs are phone verified
         status: autoVerify ? "active" : "pending_registration",
@@ -175,6 +307,55 @@ class AdminService {
       return await this.getCADetails(ca.id);
     } catch (error) {
       logger.error("Error registering CA:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update CA fields (admin) — currently caTypeId and related basics
+   */
+  async updateCA(caId, updates = {}) {
+    try {
+      const ca = await CA.findByPk(caId, {
+        include: [{ model: CAType, as: "caType" }],
+      });
+      if (!ca) {
+        throw new Error("CA not found");
+      }
+
+      const allowed = {};
+      if (updates.caTypeId !== undefined) {
+        const newType = await this.assertActiveCAType(updates.caTypeId);
+        allowed.caTypeId = updates.caTypeId;
+
+        // Keep qualifications in sync with expert type — the model default is
+        // still "Chartered Accountant", which otherwise sticks after a type change.
+        const allTypeNames = (
+          await CAType.findAll({ attributes: ["name"], raw: true })
+        ).map((t) => t.name);
+        const typeNameSet = new Set(allTypeNames);
+        const prevTypeName = ca.caType?.name;
+        const currentQuals = Array.isArray(ca.qualifications)
+          ? ca.qualifications
+          : [];
+        const nonTypeQuals = currentQuals.filter(
+          (q) => !typeNameSet.has(q) && q !== prevTypeName,
+        );
+        allowed.qualifications = [newType.name, ...nonTypeQuals];
+      }
+      if (updates.name !== undefined) allowed.name = updates.name;
+      if (updates.phone !== undefined) allowed.phone = updates.phone;
+      if (updates.location !== undefined) allowed.location = updates.location;
+      if (updates.caNumber !== undefined) allowed.caNumber = updates.caNumber;
+
+      if (Object.keys(allowed).length === 0) {
+        throw new Error("No valid fields to update");
+      }
+
+      await ca.update(allowed);
+      return await this.getCADetails(caId);
+    } catch (error) {
+      logger.error("Error updating CA:", error);
       throw error;
     }
   }
@@ -917,7 +1098,9 @@ class AdminService {
    */
   async getCADetails(caId) {
     try {
-      const ca = await CA.findByPk(caId);
+      const ca = await CA.findByPk(caId, {
+        include: [{ model: CAType, as: "caType" }],
+      });
 
       if (!ca) {
         return null;
@@ -941,6 +1124,8 @@ class AdminService {
         lastLogin: ca.lastLogin,
         createdAt: ca.createdAt,
         metadata: ca.metadata,
+        caTypeId: ca.caTypeId || null,
+        caType: mapCaType(ca.caType),
       };
     } catch (error) {
       logger.error("Error getting CA details:", error);

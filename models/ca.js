@@ -78,7 +78,7 @@ module.exports = (sequelize, DataTypes) => {
     qualifications: {
       type: DataTypes.ARRAY(DataTypes.STRING),
       allowNull: true,
-      defaultValue: ["Chartered Accountant"],
+      defaultValue: [],
     },
     languages: {
       type: DataTypes.ARRAY(DataTypes.STRING),
